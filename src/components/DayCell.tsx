@@ -1,14 +1,16 @@
 import type { CalendarCell } from '../utils/date'
+import type { DotKind } from '../types'
 
 interface Props {
   cell: CalendarCell
   isToday: boolean
   isSelected: boolean
-  hasTodos: boolean
+  /** 当天条目类型:null = 无,local = 有本地待办,ics = 仅 ICS 日程 */
+  dot: DotKind | null
   onClick: () => void
 }
 
-export function DayCell({ cell, isToday, isSelected, hasTodos, onClick }: Props) {
+export function DayCell({ cell, isToday, isSelected, dot, onClick }: Props) {
   const cls = ['day-cell']
   if (!cell.inMonth) cls.push('outside')
   if (isToday) cls.push('today')
@@ -17,7 +19,7 @@ export function DayCell({ cell, isToday, isSelected, hasTodos, onClick }: Props)
   return (
     <button type="button" className={cls.join(' ')} onClick={onClick}>
       <span className="day-num">{cell.day}</span>
-      {hasTodos && <span className="dot" aria-hidden />}
+      {dot && <span className={dot === 'ics' ? 'dot ics' : 'dot'} aria-hidden />}
     </button>
   )
 }

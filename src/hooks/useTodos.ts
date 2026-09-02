@@ -1,56 +1,57 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { Todo, TodoStore } from '../types'
 
-const STORAGE_KEY = 'mycal:todos:v1'
-
-function load(): TodoStore {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return {}
-    const data = JSON.parse(raw) as TodoStore
-    return data && typeof data === 'object' ? data : {}
-  } catch {
-    return {}
+async function api<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, {
+    headers: { 'Content-Type': 'application/json' },
+    ...init,
+  })
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: string } | null
+    throw new Error(body?.error ?? `${res.status} ${res.statusText}`)
   }
+  return res.json() as Promise<T>
 }
 
-/** 待办状态 + localStorage 持久化 */
+/** 待办/日程状态,数据存本地 SQLite,经 REST API 读写 */
 export function useTodos() {
-  const [store, setStore] = useState<TodoStore>(load)
+  const [store, setStore] = useState<TodoStore>({})
 
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(store))
-    } catch {
-      // 隐私模式等场景写入失败时静默降级
-    }
-  }, [store])
+    api<TodoStore>('/api/todos')
+      .then(setStore)
+      .catch(err => console.error('加载待办失败:', err))
+  }, [])
+
+  const reload = useCallback(async () => {
+    setStore(await api<TodoStore>('/api/todos'))
+  }, [])
 
   const getDay = useCallback(
     (key: string): Todo[] => store[key] ?? [],
     [store],
   )
 
-  const addTodo = useCallback((key: string, text: string) => {
+  const addTodo = useCallback(async (key: string, text: string) => {
     const trimmed = text.trim()
     if (!trimmed) return
+    const todo = await api<Todo>('/api/todos', {
+      method: 'POST',
+      body: JSON.stringify({ dateKey: key, text: trimmed }),
+    })
+    setStore(s => ({ ...s, [key]: [...(s[key] ?? []), todo] }))
+  }, [])
+
+  const toggleTodo = useCallback(async (key: string, id: string) => {
+    const todo = await api<Todo>(`/api/todos/${id}/toggle`, { method: 'POST' })
     setStore(s => ({
       ...s,
-      [key]: [
-        ...(s[key] ?? []),
-        { id: crypto.randomUUID(), text: trimmed, done: false, createdAt: Date.now() },
-      ],
+      [key]: (s[key] ?? []).map(t => (t.id === id ? todo : t)),
     }))
   }, [])
 
-  const toggleTodo = useCallback((key: string, id: string) => {
-    setStore(s => ({
-      ...s,
-      [key]: (s[key] ?? []).map(t => (t.id === id ? { ...t, done: !t.done } : t)),
-    }))
-  }, [])
-
-  const removeTodo = useCallback((key: string, id: string) => {
+  const removeTodo = useCallback(async (key: string, id: string) => {
+    await api<void>(`/api/todos/${id}`, { method: 'DELETE' })
     setStore(s => {
       const rest = (s[key] ?? []).filter(t => t.id !== id)
       const next = { ...s }
@@ -60,5 +61,5 @@ export function useTodos() {
     })
   }, [])
 
-  return { store, getDay, addTodo, toggleTodo, removeTodo }
+  return { store, getDay, addTodo, toggleTodo, removeTodo, reload }
 }

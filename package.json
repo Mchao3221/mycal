@@ -1,14 +1,18 @@
 {
   "name": "mycal",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently -k -n server,web -c blue,green \"node server/index.mjs\" \"vite\"",
+    "dev:server": "node server/index.mjs",
+    "dev:client": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "start": "node server/index.mjs",
+    "sketch": "node scripts/build-sketch.mjs"
   },
   "dependencies": {
+    "express": "^5.1.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
@@ -16,6 +20,7 @@
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.0",
     "typescript": "^5.6.3",
     "vite": "^5.4.11"
   }

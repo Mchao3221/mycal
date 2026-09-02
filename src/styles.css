@@ -2,6 +2,8 @@
   --accent: #4a9eed;
   --accent-deep: #3b8fe0;
   --accent-soft: #e8f2fe;
+  --ics: #4a9eed;
+  --ics-soft: #e8f2fe;
   --bg: #f4f6fa;
   --card: #ffffff;
   --text: #22303f;
@@ -32,15 +34,8 @@ body {
 
 .app-title {
   font-size: 22px;
-  margin: 0 0 18px;
+  margin: 0 0 14px;
   letter-spacing: 0.5px;
-}
-
-.panels {
-  display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
-  gap: 18px;
-  align-items: start;
 }
 
 .card {
@@ -49,6 +44,83 @@ body {
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   padding: 18px;
+}
+
+/* ---------- ICS 导入条 ---------- */
+.import-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 18px;
+  margin-bottom: 16px;
+}
+
+.import-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+  flex: none;
+}
+
+.import-bar input {
+  flex: 1;
+  min-width: 200px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 12px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.import-bar input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(74, 158, 237, 0.18);
+}
+
+.import-bar button {
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 10px;
+  padding: 9px 18px;
+  font-size: 14px;
+  cursor: pointer;
+  font-family: inherit;
+  flex: none;
+}
+
+.import-bar button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.import-bar button:not(:disabled):hover {
+  background: var(--accent-deep);
+}
+
+.import-msg {
+  flex-basis: 100%;
+  font-size: 13px;
+}
+
+.import-msg.ok {
+  color: #15803d;
+}
+
+.import-msg.err {
+  color: var(--danger);
+}
+
+/* ---------- 双栏 ---------- */
+.panels {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
 }
 
 /* ---------- 日历 ---------- */
@@ -163,6 +235,10 @@ body {
   background: #f59e0b;
 }
 
+.dot.ics {
+  background: var(--ics);
+}
+
 .day-cell.selected .dot {
   background: #fff;
 }
@@ -187,6 +263,8 @@ body {
   list-style: none;
   margin: 0 0 12px;
   padding: 0;
+  max-height: 420px;
+  overflow-y: auto;
 }
 
 .todo-list li {
@@ -216,6 +294,18 @@ body {
 
 .todo-text {
   overflow-wrap: anywhere;
+}
+
+.ics-badge {
+  display: inline-block;
+  font-size: 11px;
+  line-height: 1;
+  padding: 3px 6px;
+  margin-right: 6px;
+  border-radius: 6px;
+  background: var(--ics-soft);
+  color: #1d6fd1;
+  vertical-align: 1px;
 }
 
 li.done .todo-text {

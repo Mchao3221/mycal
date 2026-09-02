@@ -1,13 +1,15 @@
 import { useMemo } from 'react'
 import { DayCell } from './DayCell'
 import { WEEKDAYS, monthMatrix, todayKey } from '../utils/date'
+import type { DotKind } from '../types'
 
 interface Props {
   year: number
   /** 0 起始月份 */
   month: number
   selectedKey: string
-  todoDates: ReadonlySet<string>
+  /** 各日期条目类型(用于圆点着色) */
+  marks: ReadonlyMap<string, DotKind>
   onPick: (key: string) => void
   onPrevMonth: () => void
   onNextMonth: () => void
@@ -18,7 +20,7 @@ export function Calendar({
   year,
   month,
   selectedKey,
-  todoDates,
+  marks,
   onPick,
   onPrevMonth,
   onNextMonth,
@@ -61,7 +63,7 @@ export function Calendar({
             cell={c}
             isToday={c.key === todayK}
             isSelected={c.key === selectedKey}
-            hasTodos={todoDates.has(c.key)}
+            dot={marks.get(c.key) ?? null}
             onClick={() => onPick(c.key)}
           />
         ))}

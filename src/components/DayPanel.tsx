@@ -50,7 +50,10 @@ export function DayPanel({ dateKey, todos, onAdd, onToggle, onRemove }: Props) {
                 onChange={() => onToggle(t.id)}
                 aria-label={`完成:${t.text}`}
               />
-              <span className="todo-text">{t.text}</span>
+              <span className="todo-text">
+                {t.source === 'ics' && <span className="ics-badge">日程</span>}
+                {t.text}
+              </span>
             </label>
             <button
               type="button"
@@ -62,7 +65,7 @@ export function DayPanel({ dateKey, todos, onAdd, onToggle, onRemove }: Props) {
             </button>
           </li>
         ))}
-        {todos.length === 0 && <li className="empty">这天还没有待办,加一条吧</li>}
+        {todos.length === 0 && <li className="empty">这天还没有条目,加一条吧</li>}
       </ul>
 
       <form
