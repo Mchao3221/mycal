@@ -1,0 +1,18 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mycal",
+  "compatibility_date": "2026-08-31",
+  "observability": {
+    "enabled": true,
+  },
+  "assets": {
+    "not_found_handling": "single-page-application",
+  },
+  "d1_databases": [
+    {
+      "binding": "mycalDB",
+      "database_name": "mycal_db",
+      "database_id": "b7f1a921-73af-46aa-a1f0-0492b824c0a6",
+    },
+  ],
+}
