@@ -1,0 +1,8 @@
+# pnpm 11 项目级配置
+# - wrangler 4.128.0 为主动安装的新版本,放开发布年龄限制
+# - esbuild / workerd / @parcel/watcher 需要执行安装脚本(vite 与 wrangler dev 依赖)
+minimumReleaseAge: 0
+allowBuilds:
+  '@parcel/watcher': true
+  esbuild: true
+  workerd: true

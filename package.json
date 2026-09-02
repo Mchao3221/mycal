@@ -1,32 +1,30 @@
 {
   "name": "mycal",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently -k -n server,web -c blue,green \"node server/index.mjs\" \"vite\"",
-    "dev:server": "node server/index.mjs",
-    "dev:client": "vite",
-    "build": "tsc --noEmit && vite build",
+    "dev": "vite",
+    "build": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.worker.json && vite build",
     "css": "tailwindcss -i styles/workbench.css -o assets/workbench.css --minify",
-    "start": "node server/index.mjs",
     "sketch": "node scripts/build-sketch.mjs",
-    "deploy": "pnpm run build && wrangler deploy",
-    "preview": "pnpm run build && wrangler dev"
+    "db:migrate:local": "wrangler d1 migrations apply mycal_db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply mycal_db --remote",
+    "preview": "pnpm run build && wrangler dev",
+    "deploy": "pnpm run build && wrangler d1 migrations apply mycal_db --remote && wrangler deploy"
   },
   "dependencies": {
-    "express": "^5.1.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.54.3",
+    "@cloudflare/workers-types": "^4.20250902.0",
     "@tailwindcss/cli": "^4.3.3",
     "@tailwindcss/vite": "^4.3.3",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
-    "concurrently": "^9.1.0",
     "daisyui": "^5.7.27",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.6.3",
