@@ -1,9 +1,16 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="mycal">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MyCal · 日常工作台</title>
+    <script>
+      // 主题偏好仅记录深浅色选择,与待办数据无关
+      try {
+        document.documentElement.dataset.theme =
+          localStorage.getItem('mycal:theme') === 'dim' ? 'dim' : 'mycal'
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

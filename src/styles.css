@@ -1,401 +1,70 @@
-:root {
-  --accent: #4a9eed;
-  --accent-deep: #3b8fe0;
-  --accent-soft: #e8f2fe;
-  --ics: #4a9eed;
-  --ics-soft: #e8f2fe;
-  --bg: #f4f6fa;
-  --card: #ffffff;
-  --text: #22303f;
-  --muted: #8792a3;
-  --border: #e4e9f1;
-  --danger: #ef4444;
-  --radius: 14px;
-  --shadow: 0 1px 3px rgba(16, 24, 40, 0.06), 0 8px 24px rgba(16, 24, 40, 0.05);
+/* MyCal 主应用样式:Tailwind CSS v4 + daisyUI 5(与设计原型同一体系) */
+
+/* 只扫描应用自身源码,避免混入原型页的类 */
+@import "tailwindcss" source(none);
+@source "../src/**/*.{ts,tsx}";
+@source "../index.html";
+
+@theme {
+  --font-sans: system-ui, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-display: "Iowan Old Style", "Charter", Georgia, "Times New Roman", serif;
+  --font-mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
 }
 
-* {
-  box-sizing: border-box;
+/* 主题:浅色 mycal(默认)+ 内置深色 dim,顶栏按钮切换 */
+@plugin "daisyui" {
+  themes: mycal --default, dim;
 }
 
-body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--text);
-  font-family: system-ui, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-  -webkit-font-smoothing: antialiased;
+@plugin "daisyui/theme" {
+  name: "mycal";
+  default: true;
+  color-scheme: light;
+  --color-base-100: #ffffff;
+  --color-base-200: #f6f6f8;
+  --color-base-300: #e7e7ec;
+  --color-base-content: #1b1b20;
+  --color-primary: #4b5ce0;
+  --color-primary-content: #ffffff;
+  --color-secondary: #b7791f;
+  --color-secondary-content: #ffffff;
+  --color-accent: #0e9f8a;
+  --color-accent-content: #ffffff;
+  --color-neutral: #232329;
+  --color-neutral-content: #f6f6f8;
+  --color-info: #3b82f6;
+  --color-info-content: #ffffff;
+  --color-success: #16a34a;
+  --color-success-content: #ffffff;
+  --color-warning: #d97706;
+  --color-warning-content: #ffffff;
+  --color-error: #dc2626;
+  --color-error-content: #ffffff;
+  --radius-box: 1rem;
+  --radius-field: 0.625rem;
+  --radius-selector: 0.75rem;
 }
 
-.layout {
-  max-width: 1080px;
-  margin: 0 auto;
-  padding: 28px 20px 40px;
-}
-
-.app-title {
-  font-size: 22px;
-  margin: 0 0 14px;
-  letter-spacing: 0.5px;
-}
-
-.card {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  padding: 18px;
-}
-
-/* ---------- ICS 导入条 ---------- */
-.import-bar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-  padding: 12px 18px;
-  margin-bottom: 16px;
-}
-
-.import-label {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--muted);
-  flex: none;
-}
-
-.import-bar input {
-  flex: 1;
-  min-width: 200px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 9px 12px;
-  font-size: 14px;
-  font-family: inherit;
-  color: var(--text);
-  outline: none;
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-
-.import-bar input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(74, 158, 237, 0.18);
-}
-
-.import-bar button {
-  border: none;
-  background: var(--accent);
-  color: #fff;
-  border-radius: 10px;
-  padding: 9px 18px;
-  font-size: 14px;
-  cursor: pointer;
-  font-family: inherit;
-  flex: none;
-}
-
-.import-bar button:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.import-bar button:not(:disabled):hover {
-  background: var(--accent-deep);
-}
-
-.import-msg {
-  flex-basis: 100%;
-  font-size: 13px;
-}
-
-.import-msg.ok {
-  color: #15803d;
-}
-
-.import-msg.err {
-  color: var(--danger);
-}
-
-/* ---------- 双栏 ---------- */
-.panels {
-  display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
-  gap: 18px;
-  align-items: start;
-}
-
-/* ---------- 日历 ---------- */
-.cal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-
-.cal-header h2 {
-  margin: 0;
-  font-size: 18px;
-}
-
-.cal-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.icon-btn,
-.today-btn {
-  border: 1px solid var(--border);
-  background: #fff;
-  border-radius: 9px;
-  cursor: pointer;
-  color: var(--text);
-  font-family: inherit;
-  transition: background 0.15s;
-}
-
-.icon-btn {
-  width: 34px;
-  height: 34px;
-  font-size: 18px;
-  line-height: 1;
-}
-
-.today-btn {
-  height: 34px;
-  padding: 0 14px;
-  font-size: 14px;
-  background: var(--accent-soft);
-  border-color: transparent;
-  color: #1d6fd1;
-  font-weight: 600;
-}
-
-.icon-btn:hover,
-.today-btn:hover {
-  background: var(--accent-soft);
-}
-
-.weekday-row,
-.grid {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 6px;
-}
-
-.weekday {
-  text-align: center;
-  font-size: 13px;
-  color: var(--muted);
-  padding: 4px 0;
-}
-
-.day-cell {
-  position: relative;
-  border: none;
-  background: transparent;
-  border-radius: 10px;
-  height: 54px;
-  cursor: pointer;
-  font-size: 15px;
-  color: var(--text);
-  font-family: inherit;
-  transition: background 0.12s;
-}
-
-.day-cell:hover {
-  background: #eef2f8;
-}
-
-.day-cell.outside {
-  color: #b9c2cf;
-}
-
-.day-cell.today {
-  box-shadow: inset 0 0 0 2px var(--accent);
-  font-weight: 700;
-}
-
-.day-cell.selected {
-  background: var(--accent);
-  color: #fff;
-  font-weight: 700;
-}
-
-.day-cell.selected:hover {
-  background: var(--accent-deep);
-}
-
-.dot {
-  position: absolute;
-  left: 50%;
-  bottom: 8px;
-  transform: translateX(-50%);
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #f59e0b;
-}
-
-.dot.ics {
-  background: var(--ics);
-}
-
-.day-cell.selected .dot {
-  background: #fff;
-}
-
-/* ---------- 待办面板 ---------- */
-.day-panel header {
-  margin-bottom: 12px;
-}
-
-.day-panel h2 {
-  margin: 0;
-  font-size: 18px;
-}
-
-.day-panel .stats {
-  margin: 6px 0 0;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.todo-list {
-  list-style: none;
-  margin: 0 0 12px;
-  padding: 0;
-  max-height: 420px;
-  overflow-y: auto;
-}
-
-.todo-list li {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 2px;
-  border-bottom: 1px dashed var(--border);
-}
-
-.todo-list label {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: 1;
-  cursor: pointer;
-  min-width: 0;
-}
-
-.todo-list input[type="checkbox"] {
-  width: 17px;
-  height: 17px;
-  accent-color: var(--accent);
-  cursor: pointer;
-  flex: none;
-}
-
-.todo-text {
-  overflow-wrap: anywhere;
-}
-
-.ics-badge {
-  display: inline-block;
-  font-size: 11px;
-  line-height: 1;
-  padding: 3px 6px;
-  margin-right: 6px;
-  border-radius: 6px;
-  background: var(--ics-soft);
-  color: #1d6fd1;
-  vertical-align: 1px;
-}
-
-li.done .todo-text {
-  text-decoration: line-through;
-  color: var(--muted);
-}
-
-li.empty {
-  color: var(--muted);
-  font-size: 14px;
-  justify-content: center;
-  padding: 26px 0;
-  border-bottom: none;
-}
-
-.del-btn {
-  border: none;
-  background: transparent;
-  color: #c2cad6;
-  cursor: pointer;
-  font-size: 14px;
-  border-radius: 6px;
-  width: 26px;
-  height: 26px;
-  flex: none;
-  transition: color 0.15s, background 0.15s;
-}
-
-.del-btn:hover {
-  color: var(--danger);
-  background: #fdeaea;
-}
-
-.add-row {
-  display: flex;
-  gap: 8px;
-}
-
-.add-row input {
-  flex: 1;
-  min-width: 0;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 10px 12px;
-  font-size: 14px;
-  font-family: inherit;
-  color: var(--text);
-  outline: none;
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-
-.add-row input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(74, 158, 237, 0.18);
-}
-
-.add-row button {
-  border: none;
-  background: var(--accent);
-  color: #fff;
-  border-radius: 10px;
-  padding: 0 18px;
-  font-size: 14px;
-  cursor: pointer;
-  font-family: inherit;
-}
-
-.add-row button:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.add-row button:not(:disabled):hover {
-  background: var(--accent-deep);
-}
-
-.foot {
-  margin-top: 16px;
-  text-align: center;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-/* ---------- 窄屏 ---------- */
-@media (max-width: 880px) {
-  .panels {
-    grid-template-columns: 1fr;
+@layer base {
+  /* 统一键盘焦点环 */
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
   }
+}
 
-  .day-cell {
-    height: 44px;
+@layer components {
+  /* 待办 / 日程 分段切换 */
+  .seg-btn {
+    @apply flex items-center justify-center gap-2 rounded-[0.55rem] py-2 text-sm font-medium text-base-content/55 transition-colors duration-150;
+  }
+  .seg-btn.active {
+    @apply bg-base-100 text-base-content shadow-xs;
+  }
+  .seg-cnt {
+    @apply rounded-full px-1.5 font-mono text-[11px] leading-5 text-base-content/50;
+  }
+  .seg-btn.active .seg-cnt {
+    @apply bg-primary/15 text-primary;
   }
 }

@@ -1,10 +1,19 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Calendar } from './components/Calendar'
 import { DayPanel } from './components/DayPanel'
-import { ImportBar } from './components/ImportBar'
+import { ImportModal } from './components/ImportModal'
+import { Toasts, type ToastData } from './components/Toasts'
 import { useTodos } from './hooks/useTodos'
 import { todayDate, todayKey } from './utils/date'
-import type { DotKind } from './types'
+import type { DotMark } from './types'
+
+interface ImportResult {
+  fetchedEvents: number
+  imported: number
+  duplicates: number
+  skippedRecurring: number
+  outOfWindow: number
+}
 
 export default function App() {
   const now = todayDate()
@@ -12,12 +21,67 @@ export default function App() {
   const [selectedKey, setSelectedKey] = useState<string>(() => todayKey())
   const { store, getDay, addTodo, toggleTodo, removeTodo, reload } = useTodos()
 
-  // 圆点着色:本地待办优先琥珀;仅 ICS 日程为蓝
+  const [importOpen, setImportOpen] = useState(false)
+  const [toasts, setToasts] = useState<ToastData[]>([])
+  const toastSeq = useRef(0)
+  const [isDark, setIsDark] = useState(
+    () => document.documentElement.dataset.theme === 'dim',
+  )
+
+  const pushToast = useCallback((kind: ToastData['kind'], text: string) => {
+    const id = ++toastSeq.current
+    setToasts(ts => [...ts, { id, kind, text }])
+    setTimeout(() => setToasts(ts => ts.filter(t => t.id !== id)), 4500)
+  }, [])
+
+  // 快捷键:Ctrl/Cmd+I 呼出导入;Esc 关闭
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'i') {
+        e.preventDefault()
+        setImportOpen(true)
+      }
+      if (e.key === 'Escape') setImportOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  // 后台导入:弹窗立即收起,完成后 Toast 提示
+  const importIcs = useCallback(
+    async (url: string) => {
+      setImportOpen(false)
+      pushToast('success', `开始导入:${url}`)
+      try {
+        const res = await fetch('/api/ics/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url }),
+        })
+        const data = (await res.json()) as ImportResult & { error?: string }
+        if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`)
+
+        const parts = [`成功导入 ${data.imported} 条日程`]
+        if (data.duplicates) parts.push(`跳过重复 ${data.duplicates} 条`)
+        if (data.skippedRecurring) parts.push(`重复规则未展开 ${data.skippedRecurring} 条`)
+        pushToast('success', parts.join(' · '))
+        await reload()
+      } catch (err) {
+        pushToast('error', `导入失败:${err instanceof Error ? err.message : String(err)}`)
+      }
+    },
+    [pushToast, reload],
+  )
+
+  // 圆点标记:日程=蓝,待办=琥珀,同天可并存
   const marks = useMemo(() => {
-    const m = new Map<string, DotKind>()
+    const m = new Map<string, DotMark[]>()
     for (const [k, list] of Object.entries(store)) {
       if (!list.length) continue
-      m.set(k, list.some(t => t.source !== 'ics') ? 'local' : 'ics')
+      const mk: DotMark[] = []
+      if (list.some(t => t.source === 'ics')) mk.push('event')
+      if (list.some(t => t.source !== 'ics')) mk.push('todo')
+      m.set(k, mk)
     }
     return m
   }, [store])
@@ -32,13 +96,84 @@ export default function App() {
     setSelectedKey(todayKey())
   }
 
+  const toggleTheme = () => {
+    const next = !isDark
+    setIsDark(next)
+    document.documentElement.dataset.theme = next ? 'dim' : 'mycal'
+    try {
+      localStorage.setItem('mycal:theme', next ? 'dim' : 'mycal')
+    } catch {
+      /* 忽略隐私模式 */
+    }
+  }
+
   return (
-    <main className="layout">
-      <h1 className="app-title">MyCal · 日常工作台</h1>
+    <div className="min-h-screen bg-base-200">
+      {/* 顶栏 */}
+      <header className="sticky top-0 z-20 border-b border-base-300 bg-base-100/85 backdrop-blur-md">
+        <div className="mx-auto flex w-full max-w-[1280px] flex-wrap items-center gap-4 px-8 py-3 2xl:max-w-[1440px]">
+          <span className="mr-auto inline-flex items-center gap-2.5">
+            <span className="btn btn-primary btn-square btn-sm font-mono text-xs font-bold">M</span>
+            <span className="font-display text-lg font-semibold tracking-tight">MyCal</span>
+            <span className="badge badge-ghost badge-sm">日常工作台</span>
+          </span>
 
-      <ImportBar onImported={reload} />
+          <div className="inline-flex items-center gap-1">
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm btn-square text-lg"
+              onClick={prevMonth}
+              aria-label="上个月"
+            >
+              ‹
+            </button>
+            <span className="min-w-[7ch] text-center font-display font-semibold">
+              {ym.y} · {ym.m + 1} 月
+            </span>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm btn-square text-lg"
+              onClick={nextMonth}
+              aria-label="下个月"
+            >
+              ›
+            </button>
+          </div>
 
-      <div className="panels">
+          <button type="button" className="btn btn-ghost btn-sm" onClick={goToday}>
+            今天
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => setImportOpen(true)}
+            title="快捷键 Ctrl+I"
+          >
+            订阅
+          </button>
+
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm btn-square"
+            onClick={toggleTheme}
+            aria-label="切换深色模式"
+          >
+            {isDark ? (
+              <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <circle cx="12" cy="12" r="4" />
+                <path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+              </svg>
+            ) : (
+              <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z" />
+              </svg>
+            )}
+          </button>
+        </div>
+      </header>
+
+      {/* 工作区 */}
+      <main className="mx-auto grid w-full max-w-[1280px] grid-cols-1 items-start gap-6 px-8 py-8 2xl:max-w-[1440px] lg:grid-cols-[1.05fr_1fr]">
         <Calendar
           year={ym.y}
           month={ym.m}
@@ -52,14 +187,16 @@ export default function App() {
 
         <DayPanel
           dateKey={selectedKey}
-          todos={getDay(selectedKey)}
+          todos={getDay(selectedKey).filter(t => t.source !== 'ics')}
+          events={getDay(selectedKey).filter(t => t.source === 'ics')}
           onAdd={text => void addTodo(selectedKey, text)}
           onToggle={id => void toggleTodo(selectedKey, id)}
           onRemove={id => void removeTodo(selectedKey, id)}
         />
-      </div>
+      </main>
 
-      <footer className="foot">数据保存在本地 SQLite(data/mycal.db)· 支持 .ics 订阅导入</footer>
-    </main>
+      <ImportModal open={importOpen} onClose={() => setImportOpen(false)} onSubmit={url => void importIcs(url)} />
+      <Toasts items={toasts} onDismiss={id => setToasts(ts => ts.filter(t => t.id !== id))} />
+    </div>
   )
 }

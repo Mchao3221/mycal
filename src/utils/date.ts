@@ -20,6 +20,15 @@ export function todayKey(): string {
   return fmtKey(t.getFullYear(), t.getMonth(), t.getDate())
 }
 
+/** ISO 周数 */
+export function weekOfYear(d: Date): number {
+  const t = new Date(d)
+  t.setHours(0, 0, 0, 0)
+  t.setDate(t.getDate() + 3 - ((t.getDay() + 6) % 7))
+  const wk4 = new Date(t.getFullYear(), 0, 4)
+  return 1 + Math.round(((t.getTime() - wk4.getTime()) / 86400000 - (wk4.getDay() + 6) % 7 + 7) / 7)
+}
+
 /** 0=周一 … 6=周日 */
 export function weekdayLabel(y: number, m: number, d: number): string {
   return WEEKDAYS[(new Date(y, m, d).getDay() + 6) % 7]

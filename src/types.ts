@@ -12,5 +12,5 @@ export interface Todo {
 /** 后端返回的存储结构:日期 key(YYYY-MM-DD) -> 当天条目 */
 export type TodoStore = Record<string, Todo[]>
 
-/** 日历圆点:local = 有本地待办(琥珀),ics = 仅 ICS 日程(蓝) */
-export type DotKind = 'local' | 'ics'
+/** 日历圆点:event = 有 ICS 日程(蓝),todo = 有本地待办(琥珀) */
+export type DotMark = 'event' | 'todo'

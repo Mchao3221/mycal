@@ -95,27 +95,34 @@
       <ul class="m-0 list-none p-0" id="schedList"></ul>
     </div>
 
-    <div class="mt-6 border-t border-base-300 pt-5" id="importRow" data-od-id="import">
-      <div class="flex items-center justify-between gap-3">
-        <span class="font-mono text-[11px] uppercase tracking-[0.08em] text-base-content/50">订阅 .ics 日程</span>
-        <span class="badge badge-ghost badge-sm font-mono">本地 SQLite</span>
-      </div>
-      <form class="mt-3 flex gap-2" id="importForm">
-        <input class="input input-bordered w-full bg-base-100" id="icsUrl" placeholder="https://example.com/calendar.ics" aria-label="ICS 订阅链接" />
-        <button type="submit" class="btn btn-primary px-5">导入</button>
-      </form>
-      <p class="hidden text-sm" id="importNote"></p>
-    </div>
+    <div class="hidden" id="importRow" data-od-id="import"></div>
   </section>
 </main>
 
 <!-- ─── 页脚 ─────────────────────────────────────────────── -->
 <footer class="border-t border-base-300 bg-base-100/60" data-od-id="footer">
   <div class="mx-auto flex w-full max-w-[1180px] flex-wrap items-center justify-between gap-2.5 px-7 py-8 text-[13px] text-base-content/55">
-    <span>© 2026 MyCal · 数据保存在本地 SQLite</span>
-    <span class="font-mono text-xs">支持 .ics 订阅导入 · 本地优先</span>
+    <span>© 2026 MyCal</span>
   </div>
 </footer>
+
+<!-- 导入弹窗(Ctrl+I 呼出) -->
+<div class="modal" id="importModal" role="dialog" aria-modal="true" aria-label="导入 ICS 订阅">
+  <div class="modal-box">
+    <h3 class="text-lg font-semibold">导入 .ics 订阅</h3>
+    <p class="mt-1 text-sm text-base-content/55">粘贴日历订阅链接,后台导入完成后日程会自动铺进日历。</p>
+    <form class="mt-4 flex gap-2" id="importForm">
+      <input class="input input-bordered w-full" id="icsUrl" placeholder="https://example.com/calendar.ics" aria-label="ICS 订阅链接" />
+      <button type="submit" class="btn btn-primary">导入</button>
+    </form>
+    <div class="modal-action"><button type="button" class="btn btn-ghost btn-sm" id="importClose">关闭</button></div>
+    <p class="mt-2 font-mono text-[11px] text-base-content/40">快捷键 Ctrl+I 呼出 · Esc 关闭</p>
+  </div>
+  <button class="modal-backdrop" id="importBackdrop" aria-label="关闭"></button>
+</div>
+
+<!-- Toast 容器 -->
+<div class="toast toast-end z-50" id="toastZone"></div>
 
 <script>
 (function(){
@@ -271,7 +278,7 @@
 
   function renderSched(events){
     if(!events.length){
-      el.schedList.innerHTML = `<li class="py-8 text-center text-sm text-base-content/50">这天没有日程<small class="mt-1.5 block font-mono text-xs">订阅 .ics 后自动出现在这里</small></li>`;
+      el.schedList.innerHTML = `<li class="py-8 text-center text-sm text-base-content/50">这天没有日程<small class="mt-1.5 block font-mono text-xs">按 Ctrl+I 导入 .ics 订阅</small></li>`;
       return;
     }
     el.schedList.innerHTML = events.map(e=>`
@@ -335,20 +342,40 @@
     el.todoInput.value=''; renderDay(); renderGrid();
   });
 
-  document.getElementById('toggleImport').addEventListener('click', ()=>{
-    const row = document.getElementById('importRow');
-    if(row) row.classList.toggle('hidden');
-  });
-  const importForm = document.getElementById('importForm');
-  if(importForm){
-    importForm.addEventListener('submit', (e)=>{
-      e.preventDefault();
-      const inp = document.getElementById('icsUrl'); const url = inp.value.trim();
-      const note = document.getElementById('importNote');
-      if(!url){ note.textContent='请输入 .ics 订阅链接'; note.className='mt-2 text-sm text-error'; return; }
-      note.textContent='这是一个设计原型：订阅导入将在接入后端 API 后生效。'; note.className='mt-2 text-sm text-success';
-    });
+  /* 订阅导入:Ctrl+I 呼出弹窗,提交后立即关闭,后台模拟导入,Toast 提示 */
+  const importModal = document.getElementById('importModal');
+  const icsInput = document.getElementById('icsUrl');
+  function showToast(text, ok){
+    const t = document.createElement('div');
+    t.className = `alert shadow-lg ${ok ? 'alert-success' : 'alert-error'}`;
+    t.textContent = text;
+    document.getElementById('toastZone').appendChild(t);
+    setTimeout(()=>{ t.remove(); }, 4000);
   }
+  function openImport(){
+    importModal.classList.add('modal-open');
+    setTimeout(()=>icsInput.focus(), 50);
+  }
+  function closeImport(){ importModal.classList.remove('modal-open'); }
+  document.getElementById('toggleImport').addEventListener('click', openImport);
+  document.getElementById('importClose').addEventListener('click', closeImport);
+  document.getElementById('importBackdrop').addEventListener('click', closeImport);
+  window.addEventListener('keydown', (e)=>{
+    if((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'i'){
+      e.preventDefault();
+      importModal.classList.contains('modal-open') ? closeImport() : openImport();
+    }
+    if(e.key === 'Escape') closeImport();
+  });
+  document.getElementById('importForm').addEventListener('submit', (e)=>{
+    e.preventDefault();
+    const url = icsInput.value.trim();
+    if(!url){ showToast('请输入 .ics 订阅链接', false); return; }
+    closeImport();
+    icsInput.value = '';
+    showToast(`开始导入:${url}`, true);
+    setTimeout(()=> showToast('原型模拟:成功导入 5 条日程', true), 1200);
+  });
 
   renderWeekdays(); renderGrid(); monthSummary(); renderDay();
 })();
