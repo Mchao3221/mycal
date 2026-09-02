@@ -111,7 +111,7 @@ export default function App() {
     <div className="min-h-screen bg-base-200">
       {/* 顶栏 */}
       <header className="sticky top-0 z-20 border-b border-base-300 bg-base-100/85 backdrop-blur-md">
-        <div className="mx-auto flex w-full max-w-[1280px] flex-wrap items-center gap-4 px-8 py-3 2xl:max-w-[1440px]">
+        <div className="mx-auto flex w-full max-w-[1920px] flex-wrap items-center gap-4 px-8 py-3">
           <span className="mr-auto inline-flex items-center gap-2.5">
             <span className="btn btn-primary btn-square btn-sm font-mono text-xs font-bold">M</span>
             <span className="font-display text-lg font-semibold tracking-tight">MyCal</span>
@@ -173,7 +173,7 @@ export default function App() {
       </header>
 
       {/* 工作区 */}
-      <main className="mx-auto grid w-full max-w-[1280px] grid-cols-1 items-start gap-6 px-8 py-8 2xl:max-w-[1440px] lg:grid-cols-[1.05fr_1fr]">
+      <main className="mx-auto grid w-full max-w-[1920px] grid-cols-1 items-start gap-6 px-8 py-8 lg:grid-cols-[1.05fr_1fr]">
         <Calendar
           year={ym.y}
           month={ym.m}

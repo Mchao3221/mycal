@@ -100,7 +100,7 @@ export function DayPanel({ dateKey, todos, events, onAdd, onToggle, onRemove }: 
 
       {tab === 'todo' ? (
         <>
-          <ul className="m-0 list-none p-0">
+          <ul className="m-0 max-h-[520px] list-none overflow-y-auto p-0 pr-1">
             {todos.map(t => (
               <li key={t.id} className="flex items-start gap-3 border-b border-base-300 py-3">
                 <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-3">
@@ -174,7 +174,7 @@ export function DayPanel({ dateKey, todos, events, onAdd, onToggle, onRemove }: 
           </form>
         </>
       ) : (
-        <ul className="m-0 list-none p-0">
+        <ul className="m-0 max-h-[520px] list-none overflow-y-auto p-0 pr-1">
           {events.map(t => {
             const mt = t.text.match(/^(\d{2}:\d{2})\s+(.*)$/)
             return (
