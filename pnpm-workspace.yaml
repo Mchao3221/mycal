@@ -1,7 +1,15 @@
 # pnpm 11 项目级配置
+# - packages: 声明根为唯一工作区成员(pnpm 10 要求此字段存在,CI 兼容)
 # - wrangler 4.128.0 为主动安装的新版本,放开发布年龄限制
 # - esbuild / workerd / @parcel/watcher 需要执行安装脚本(vite 与 wrangler dev 依赖)
+packages:
+  - '.'
 minimumReleaseAge: 0
+# pnpm ≤10 的白名单格式(pnpm 11 起改为 allowBuilds,两种并存保证 CI/本地兼容)
+onlyBuiltDependencies:
+  - esbuild
+  - workerd
+  - '@parcel/watcher'
 allowBuilds:
   '@parcel/watcher': true
   esbuild: true
