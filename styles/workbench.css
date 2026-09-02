@@ -1,0 +1,70 @@
+/* MyCal 日常工作台(设计原型)样式源文件
+   编译:npm run css  →  assets/workbench.css */
+
+/* 关闭自动内容探测,只扫描原型页,产物最小化 */
+@import "tailwindcss" source(none);
+@source "../mycal-daily-workbench.html";
+
+/* 与原型一致的字体气质:衬线标题 + 等宽数字 */
+@theme {
+  --font-display: "Iowan Old Style", "Charter", Georgia, "Times New Roman", serif;
+  --font-mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+}
+
+/* daisyUI:默认浅色主题 mycal + 内置深色主题 dim(顶栏按钮切换) */
+@plugin "daisyui" {
+  themes: mycal --default, dim;
+}
+
+@plugin "daisyui/theme" {
+  name: "mycal";
+  default: true;
+  color-scheme: light;
+  --color-base-100: #ffffff;
+  --color-base-200: #f6f6f8;
+  --color-base-300: #e7e7ec;
+  --color-base-content: #1b1b20;
+  --color-primary: #4b5ce0;
+  --color-primary-content: #ffffff;
+  --color-secondary: #b7791f;
+  --color-secondary-content: #ffffff;
+  --color-accent: #0e9f8a;
+  --color-accent-content: #ffffff;
+  --color-neutral: #232329;
+  --color-neutral-content: #f6f6f8;
+  --color-info: #3b82f6;
+  --color-info-content: #ffffff;
+  --color-success: #16a34a;
+  --color-success-content: #ffffff;
+  --color-warning: #d97706;
+  --color-warning-content: #ffffff;
+  --color-error: #dc2626;
+  --color-error-content: #ffffff;
+  --radius-box: 1rem;
+  --radius-field: 0.625rem;
+  --radius-selector: 0.75rem;
+}
+
+@layer base {
+  /* 统一键盘焦点环 */
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  /* 待办 / 日程 分段切换(daisyUI 无现成等价物) */
+  .seg-btn {
+    @apply flex items-center justify-center gap-2 rounded-[0.55rem] py-2 text-sm font-medium text-base-content/55 transition-colors duration-150;
+  }
+  .seg-btn.active {
+    @apply bg-base-100 text-base-content shadow-xs;
+  }
+  .seg-cnt {
+    @apply rounded-full px-1.5 font-mono text-[11px] leading-5 text-base-content/50;
+  }
+  .seg-btn.active .seg-cnt {
+    @apply bg-primary/15 text-primary;
+  }
+}
