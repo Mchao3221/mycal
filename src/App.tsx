@@ -118,28 +118,6 @@ export default function App() {
             <span className="badge badge-ghost badge-sm">日常工作台</span>
           </span>
 
-          <div className="inline-flex items-center gap-1">
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm btn-square text-lg"
-              onClick={prevMonth}
-              aria-label="上个月"
-            >
-              ‹
-            </button>
-            <span className="min-w-[7ch] text-center font-display font-semibold">
-              {ym.y} · {ym.m + 1} 月
-            </span>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm btn-square text-lg"
-              onClick={nextMonth}
-              aria-label="下个月"
-            >
-              ›
-            </button>
-          </div>
-
           <button type="button" className="btn btn-ghost btn-sm" onClick={goToday}>
             今天
           </button>

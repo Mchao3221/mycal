@@ -7,12 +7,12 @@ function pad2(n: number): string {
   return String(n).padStart(2, '0')
 }
 
-export function dateKeyOf(d: Date): string {
+function dateKeyOf(d: Date): string {
   return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`
 }
 
 /** 解析续行:以空格/Tab 开头的行并入上一行 */
-export function unfoldLines(text: string): string[] {
+function unfoldLines(text: string): string[] {
   const lines: string[] = []
   for (const raw of text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')) {
     if ((raw.startsWith(' ') || raw.startsWith('\t')) && lines.length > 0) {
@@ -120,11 +120,11 @@ export interface ExpandResult {
   outOfWindow: number
 }
 
+const MAX_SPAN_DAYS = 30
+const MAX_ITEMS = 500
+
 /** 把事件展开为逐日条目(窗口外跳过,返回统计供前端提示) */
-export function expandEvents(
-  events: IcsEvent[],
-  { fromMs, toMs, maxSpanDays = 30, maxItems = 500 }: { fromMs: number; toMs: number; maxSpanDays?: number; maxItems?: number },
-): ExpandResult {
+export function expandEvents(events: IcsEvent[], { fromMs, toMs }: { fromMs: number; toMs: number }): ExpandResult {
   const items: ExpandedItem[] = []
   let skippedRecurring = 0
   let outOfWindow = 0
@@ -149,13 +149,13 @@ export function expandEvents(
     if (ev.start.allDay) {
       let endExclusive = ev.end?.allDay ? ev.end.date.getTime() : start.getTime() + 86_400_000
       if (endExclusive <= start.getTime()) endExclusive = start.getTime() + 86_400_000
-      const spanDays = Math.min(maxSpanDays, Math.round((endExclusive - start.getTime()) / 86_400_000))
-      for (let i = 0; i < spanDays && items.length < maxItems; i++) {
+      const spanDays = Math.min(MAX_SPAN_DAYS, Math.round((endExclusive - start.getTime()) / 86_400_000))
+      for (let i = 0; i < spanDays && items.length < MAX_ITEMS; i++) {
         const d = new Date(start.getTime() + i * 86_400_000)
         items.push({ uid, dateKey: dateKeyOf(d), text: title })
       }
     } else {
-      if (items.length >= maxItems) break
+      if (items.length >= MAX_ITEMS) break
       const time = `${pad2(start.getUTCHours())}:${pad2(start.getUTCMinutes())}`
       items.push({ uid, dateKey: dateKeyOf(start), text: `${time} ${title}` })
     }

@@ -78,6 +78,7 @@ pnpm run deploy
 
 本地测试可直接使用 [`docs/sample.ics`](docs/sample.ics):用任意静态服务暴露该文件后把链接粘贴进弹窗即可。
 
+
 ## REST API
 
 | 方法 | 路径 | 说明 |
@@ -107,17 +108,15 @@ mycal/
 │   ├── main.tsx / App.tsx / types.ts / utils/date.ts
 │   ├── hooks/useTodos.ts         # 经 REST API 读写待办
 │   └── components/               # Calendar / DayCell / DayPanel / ImportModal / Toasts
-├── mycal-daily-workbench.html    # 静态 UI 原型页(pnpm run css 重建其样式)
-├── styles/workbench.css          # 原型页 Tailwind 源样式
-├── docs/                         # ui-sketch.excalidraw / sample.ics
-└── scripts/build-sketch.mjs      # 重新生成草图(pnpm run sketch)
+└── docs/
+    └── sample.ics                # ICS 导入本地测试样例
 ```
 
 ## 路线图
 
-- ✅ v0.1:规划 → Excalidraw 草图 → 日历 + 待办(localStorage 版)
+- ✅ v0.1:规划 → 日历 + 待办(localStorage 版)
 - ✅ v0.2:SQLite 持久化 + REST API;ICS 订阅导入;待办/日程双 Tab;Tailwind + daisyUI 重构
-- ✅ v0.3:迁移到 Cloudflare Workers + D1;表结构改为迁移文件管理;deploy 前置远端迁移
+- ✅ v0.3:迁移到 Cloudflare Workers + D1;表结构改为迁移文件管理;deploy 前置远端迁移;清理原型页与草图生成器
 - ⬜ v2 候选:订阅定时自动同步(Cron Triggers)、RRULE 展开、待办文字编辑、优先级、导出 JSON 备份
 
 更完整的规划与交互设计见 [`PLAN.md`](PLAN.md)。

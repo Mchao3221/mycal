@@ -99,10 +99,8 @@ mycal/
 │   ├── main.tsx / App.tsx / types.ts / utils/date.ts
 │   ├── hooks/useTodos.ts
 │   └── components/             # Calendar / DayCell / DayPanel / ImportModal / Toasts
-├── mycal-daily-workbench.html  # 静态 UI 原型页(pnpm run css 重建其样式)
-├── styles/workbench.css
-├── docs/                       # ui-sketch.excalidraw / sample.ics
-└── scripts/build-sketch.mjs
+└── docs/
+    └── sample.ics              # ICS 导入本地测试样例
 ```
 
 ## 5. 交互设计
@@ -142,7 +140,7 @@ pnpm run preview
 
 ## 7. 里程碑
 
-1. ✅ v0.1:规划 → Excalidraw 草图 → 日历+待办(localStorage 版)
-2. ✅ v0.2:SQLite 持久化 + REST API;ICS 订阅导入;待办/日程双 Tab;草图归档
-3. ✅ v0.3:**迁移到 Cloudflare Workers + D1**:Express 退役,API 重写为 Worker;表结构改为迁移文件管理(含去重唯一索引);本地 dev 由 Cloudflare Vite 插件内嵌 workerd;deploy 前置远端迁移
+1. ✅ v0.1:规划 → 日历+待办(localStorage 版)
+2. ✅ v0.2:SQLite 持久化 + REST API;ICS 订阅导入;待办/日程双 Tab
+3. ✅ v0.3:**迁移到 Cloudflare Workers + D1**:Express 退役,API 重写为 Worker;表结构改为迁移文件管理(含去重唯一索引);本地 dev 由 Cloudflare Vite 插件内嵌 workerd;deploy 前置远端迁移;清理原型页/草图生成器等历史产物
 4. ⬜ v2 候选:订阅定时自动同步(Cron Triggers)、RRULE 展开、待办文字编辑、优先级、导出 JSON 备份
