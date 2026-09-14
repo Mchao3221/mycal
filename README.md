@@ -3,8 +3,9 @@
 一个「日历 + 每日待办」的 Web 应用:看月历,点哪天,就管哪天的事。
 
 - 📅 **月历视图**:按月展示、上/下月切换、一键回到今天,「今天」与选中日高亮;
-- ✅ **待办 / 日程双 Tab**:待办可添加(回车/按钮)、勾选完成、删除;日程以时间轴样式展示,可移除单条;
-- 🔵🟡 **圆点标记**:蓝 = 有日程,琥珀 = 有待办,可并存;
+- ✅ **待办 / 日程 / 打卡三 Tab**:待办可添加(回车/按钮)、勾选完成、删除;日程以时间轴展示,可移除单条;打卡记录每日饮食与运动;
+- 🔵🟡🟢 **圆点标记**:蓝 = 有日程,琥珀 = 有待办,绿 = 有打卡,可并存;
+- 🍽 **打卡日记 + AI 汇总**:记录每日吃动,一键让 AI(OpenAI 兼容)估算热量并结合健康档案(BMR/TDEE)给出今日摄入/消耗收支点评;
 - 📥 **ICS 订阅导入**:`Ctrl+I` 或顶栏「订阅」呼出弹窗,粘贴订阅链接即可把日程按日期铺进日历,重复导入零副作用(同 UID 同一天只入库一次);
 - ☁️ **Cloudflare Workers + D1**:前端与 API 一体部署,数据存 D1(SQLite),表结构由迁移文件管理;
 - 🌗 **深浅色主题**:Tailwind v4 + daisyUI 5,自定义浅色主题 + dim 深色,一键切换(记忆在 localStorage)。
@@ -88,6 +89,18 @@ pnpm run deploy
 | POST | `/api/todos/:id/toggle` | 切换完成态 → Todo |
 | DELETE | `/api/todos/:id` | 删除 → `{ ok }` |
 | POST | `/api/ics/import` | 导入:`{ url }` → `{ fetchedEvents, imported, duplicates, skippedRecurring, outOfWindow }` |
+| GET/POST/PATCH/DELETE | `/api/health` · `/api/health/:id` | 打卡日记条目 CRUD(全量 `Record<date, HealthLog[]>`) |
+| GET/PUT | `/api/profile` | 健康档案(AI 汇总据此算 BMR/TDEE) |
+| GET/PUT | `/api/ai/config` | AI 服务配置 `{ baseUrl, model, hasKey }`(密钥只写不读) |
+| GET/POST/DELETE | `/api/ai/summary/:dateKey` · `/api/ai/summary` | AI 每日汇总:读取 / 生成 / 清除 |
+
+## 打卡日记与 AI 汇总
+
+1. 顶栏「档案」填性别/年龄/身高/体重(等),「AI」配置任一 OpenAI 兼容服务的 Base URL + API Key + 模型;
+2. 在「打卡」Tab 记饮食/运动条目,热量可留空;
+3. 点「生成今日汇总」→ AI 逐条估算缺失热量(不覆盖手动值)并结合基础代谢给出摄入/消耗/净差与点评;结果按天缓存,可清除重生成。
+
+密钥可存 `settings` 表(经 UI),也可用环境变量兜底:`AI_BASE_URL` / `AI_API_KEY` / `AI_MODEL`(生产建议 `wrangler secret put AI_API_KEY`)。
 
 ## 项目结构
 
@@ -97,17 +110,22 @@ mycal/
 ├── wrangler.jsonc                # Workers + D1 绑定 + 迁移目录 + SPA 静态资产
 ├── migrations/                   # ★ 表结构唯一事实源
 │   ├── 0001_init.sql             # todos 表 + 索引
-│   └── 0002_uid_date_unique.sql  # ICS 去重唯一索引
+│   ├── 0002_uid_date_unique.sql  # ICS 去重唯一索引
+│   └── 0003_health_diary.sql     # 打卡 / 档案 / AI 汇总 / 设置 4 张表
 ├── worker/                       # ★ API 后端(跑在 Cloudflare Workers)
-│   ├── index.ts                  # fetch 入口 + 路由
-│   ├── db.ts                     # D1 查询(CRUD / 批量导入去重)
+│   ├── index.ts                  # fetch 入口 + 路由(正则匹配)
+│   ├── db.ts                     # D1 查询(待办/打卡/档案/汇总/设置)
+│   ├── ai.ts                     # AI 每日汇总(OpenAI 兼容 + BMR/TDEE 估算)
+│   ├── validate.ts               # dateKey/kcal/档案入参校验
 │   ├── ics.ts                    # ICS 解析/展开
-│   ├── env.d.ts                  # D1 绑定类型
-│   └── types.ts                  # Todo / TodoRow
+│   ├── env.d.ts                  # Env 绑定类型(D1 + AI_* 变量)
+│   └── types.ts                  # Todo / HealthLog / Profile / AiSummary …
 ├── src/                          # React 前端
-│   ├── main.tsx / App.tsx / types.ts / utils/date.ts
-│   ├── hooks/useTodos.ts         # 经 REST API 读写待办
-│   └── components/               # Calendar / DayCell / DayPanel / ImportModal / Toasts
+│   ├── main.tsx / App.tsx / types.ts
+│   ├── utils/date.ts / utils/api.ts
+│   ├── hooks/useTodos.ts / hooks/useHealth.ts
+│   └── components/               # Calendar / DayCell / DayPanel / DiaryPanel /
+│                                 # ImportModal / ProfileModal / AiConfigModal / Toasts
 └── docs/
     └── sample.ics                # ICS 导入本地测试样例
 ```
@@ -117,6 +135,7 @@ mycal/
 - ✅ v0.1:规划 → 日历 + 待办(localStorage 版)
 - ✅ v0.2:SQLite 持久化 + REST API;ICS 订阅导入;待办/日程双 Tab;Tailwind + daisyUI 重构
 - ✅ v0.3:迁移到 Cloudflare Workers + D1;表结构改为迁移文件管理;deploy 前置远端迁移;清理原型页与草图生成器
-- ⬜ v2 候选:订阅定时自动同步(Cron Triggers)、RRULE 展开、待办文字编辑、优先级、导出 JSON 备份
+- ✅ v0.3.1:打卡日记(饮食/运动 + 热量)+ 健康档案 + AI 每日汇总(OpenAI 兼容);日历第三圆点(绿)
+- ⬜ v2 候选:订阅定时自动同步(Cron Triggers)、RRULE 展开、待办文字编辑、优先级、导出 JSON 备份;打卡体重曲线、AI 流式输出
 
 更完整的规划与交互设计见 [`PLAN.md`](PLAN.md)。

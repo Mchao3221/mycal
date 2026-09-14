@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import type { Todo } from '../types'
+import type { HealthLog, HealthLogInput, Todo } from '../types'
+import { DiaryPanel } from './DiaryPanel'
 import { todayKey, weekOfYear, weekdayLabel } from '../utils/date'
 
 interface Props {
@@ -9,14 +10,36 @@ interface Props {
   todos: Todo[]
   /** ICS 日程(source === 'ics') */
   events: Todo[]
+  /** 当天打卡记录 */
+  diaryLogs: HealthLog[]
   onAdd: (text: string) => void
   onToggle: (id: string) => void
   onRemove: (id: string) => void
+  onDiaryAdd: (input: HealthLogInput) => Promise<void>
+  onDiaryPatch: (id: string, patch: Partial<HealthLogInput>) => Promise<void>
+  onDiaryRemove: (id: string) => Promise<void>
+  notify: (kind: 'success' | 'error', text: string) => void
+  onOpenProfile: () => void
+  onOpenAiConfig: () => void
 }
 
-type Tab = 'todo' | 'sched'
+type Tab = 'todo' | 'sched' | 'diary'
 
-export function DayPanel({ dateKey, todos, events, onAdd, onToggle, onRemove }: Props) {
+export function DayPanel({
+  dateKey,
+  todos,
+  events,
+  diaryLogs,
+  onAdd,
+  onToggle,
+  onRemove,
+  onDiaryAdd,
+  onDiaryPatch,
+  onDiaryRemove,
+  notify,
+  onOpenProfile,
+  onOpenAiConfig,
+}: Props) {
   const [tab, setTab] = useState<Tab>('todo')
   const [draft, setDraft] = useState('')
 
@@ -75,7 +98,7 @@ export function DayPanel({ dateKey, todos, events, onAdd, onToggle, onRemove }: 
       </div>
 
       <div
-        className="mb-4 grid grid-cols-2 gap-1 rounded-xl bg-base-300/60 p-1"
+        className="mb-4 grid grid-cols-3 gap-1 rounded-xl bg-base-300/60 p-1"
         role="tablist"
       >
         <button
@@ -95,6 +118,15 @@ export function DayPanel({ dateKey, todos, events, onAdd, onToggle, onRemove }: 
           onClick={() => setTab('sched')}
         >
           日程 <span className="seg-cnt">{events.length}</span>
+        </button>
+        <button
+          type="button"
+          className={`seg-btn ${tab === 'diary' ? 'active' : ''}`}
+          role="tab"
+          aria-selected={tab === 'diary'}
+          onClick={() => setTab('diary')}
+        >
+          打卡 <span className="seg-cnt">{diaryLogs.length}</span>
         </button>
       </div>
 
@@ -173,7 +205,7 @@ export function DayPanel({ dateKey, todos, events, onAdd, onToggle, onRemove }: 
             </button>
           </form>
         </>
-      ) : (
+      ) : tab === 'sched' ? (
         <ul className="m-0 max-h-[520px] list-none overflow-y-auto p-0 pr-1">
           {events.map(t => {
             const mt = t.text.match(/^(\d{2}:\d{2})\s+(.*)$/)
@@ -206,6 +238,17 @@ export function DayPanel({ dateKey, todos, events, onAdd, onToggle, onRemove }: 
             </li>
           )}
         </ul>
+      ) : (
+        <DiaryPanel
+          dateKey={dateKey}
+          logs={diaryLogs}
+          onAdd={onDiaryAdd}
+          onPatch={onDiaryPatch}
+          onRemove={onDiaryRemove}
+          notify={notify}
+          onOpenProfile={onOpenProfile}
+          onOpenAiConfig={onOpenAiConfig}
+        />
       )}
     </section>
   )

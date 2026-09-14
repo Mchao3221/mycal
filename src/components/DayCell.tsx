@@ -5,9 +5,15 @@ interface Props {
   cell: CalendarCell
   isToday: boolean
   isSelected: boolean
-  /** 当天标记列表:event=日程(蓝) todo=待办(琥珀) */
+  /** 当天标记列表:event=日程(蓝) todo=待办(琥珀) health=打卡(绿) */
   marks: readonly DotMark[]
   onClick: () => void
+}
+
+const DOT_COLOR: Record<DotMark, string> = {
+  event: 'bg-primary',
+  todo: 'bg-secondary',
+  health: 'bg-success',
 }
 
 export function DayCell({ cell, isToday, isSelected, marks, onClick }: Props) {
@@ -24,9 +30,7 @@ export function DayCell({ cell, isToday, isSelected, marks, onClick }: Props) {
   const dots = marks.map(m => (
     <span
       key={m}
-      className={`size-1.5 rounded-full ${
-        isSelected ? 'bg-primary-content/90' : m === 'event' ? 'bg-primary' : 'bg-secondary'
-      }`}
+      className={`size-1.5 rounded-full ${isSelected ? 'bg-primary-content/90' : DOT_COLOR[m]}`}
     />
   ))
 

@@ -102,6 +102,10 @@ export function Calendar({
           <i className="inline-block size-[7px] rounded-full bg-secondary" />
           待办
         </span>
+        <span className="inline-flex items-center gap-1.5">
+          <i className="inline-block size-[7px] rounded-full bg-success" />
+          打卡
+        </span>
       </div>
     </section>
   )

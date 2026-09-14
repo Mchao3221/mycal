@@ -16,10 +16,14 @@
 | 模块 | 功能点 |
 | --- | --- |
 | 日历 | 月视图网格(周一打头)、上/下月切换、回到今天 |
-| 日历 | 「今天」高亮、选中日高亮、双圆点标记(蓝=日程,琥珀=待办,可并存) |
-| 当日面板 | **待办 / 日程双 Tab 分离列表**(不混排)、完成度进度条、周数、空状态 |
+| 日历 | 「今天」高亮、选中日高亮、三圆点标记(蓝=日程,琥珀=待办,绿=打卡,可并存) |
+| 当日面板 | **待办 / 日程 / 打卡三分段 Tab**(不混排)、完成度进度条、周数、空状态 |
 | 待办 Tab | 添加(回车/按钮)、勾选完成/取消、删除;自定义复选框 |
 | 日程 Tab | 时间轴样式(时刻 + 竖条)、全天归档显示、可移除单条日程 |
+| 打卡 Tab | 每日**饮食(早/午/晚/加餐)与运动**条目快记;热量可手动填或留空待 AI 估算;行内点击 kcal 可修正/清除 |
+| 打卡 Tab | **AI 每日汇总**:估算缺失热量(不覆盖手动值)→ 算摄入/消耗/净差 → 结合档案点评;按天缓存可重生成 |
+| 健康档案 | 性别/年龄/身高/体重/目标体重/活动量/目标方向,顶栏「档案」弹窗,仅存本库 |
+| AI 设置 | OpenAI 兼容服务(Base URL + API Key + 模型),顶栏「AI」弹窗;密钥只写不读 |
 | ICS 导入 | **Ctrl+I 或顶栏「订阅」呼出弹窗** → 提交后弹窗立即关闭 → 后台导入 → Toast 提示结果 |
 | ICS 去重 | 唯一索引 `(uid, date_key)` + `INSERT OR IGNORE`,重复导入零副作用 |
 | 主题 | Tailwind v4 + daisyUI 5;自定义浅色主题 + dim 深色,顶栏按钮切换 |
@@ -67,7 +71,34 @@ CREATE TABLE todos (
 CREATE INDEX idx_todos_date      ON todos(date_key);
 CREATE INDEX idx_todos_uid       ON todos(uid);
 CREATE UNIQUE INDEX idx_todos_uid_date ON todos(uid, date_key); -- ICS 去重
+
+-- 0003_health_diary.sql — 打卡日记 + 健康档案 + AI 汇总 + 应用设置
+CREATE TABLE health_logs (
+  id          TEXT PRIMARY KEY,
+  date_key    TEXT NOT NULL,
+  kind        TEXT NOT NULL,      -- 'diet'=摄入 | 'exercise'=消耗
+  text        TEXT NOT NULL,      -- 「一碗牛肉面」
+  meal        TEXT,               -- 仅 diet:breakfast/lunch/dinner/snack
+  kcal        INTEGER,            -- 千卡;NULL=待 AI 估算
+  kcal_source TEXT,               -- 'manual'(不被 AI 覆盖)| 'ai'
+  created_at  INTEGER NOT NULL
+);
+CREATE TABLE profile (            -- 健康档案:全局单行(id=1)
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  sex TEXT, age INTEGER, height_cm REAL, weight_kg REAL,
+  target_weight_kg REAL, activity TEXT, goal TEXT, updated_at INTEGER
+);
+CREATE TABLE ai_summaries (date_key TEXT PRIMARY KEY, content TEXT, created_at INTEGER);
+CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT); -- ai.baseUrl / ai.apiKey / ai.model
 ```
+
+### AI 汇总策略(worker/ai.ts)
+
+1. 前置校验:当天有打卡记录、档案四要素齐全、API Key 已配置,否则 400;
+2. 配置优先级:`settings` 表 > 环境变量/secret(`AI_BASE_URL/AI_API_KEY/AI_MODEL`)> 默认(`https://api.openai.com/v1` / `gpt-4o-mini`);
+3. 一次 `/chat/completions` 调用:为缺热量条目逐条估算(**只回填空值,不覆盖手动值**)+ 150 字内中文点评;回复按 JSON 解析(容忍 ``` 围栏);
+4. 热量口径在服务端确定性计算:Mifflin-St Jeor BMR × 活动系数(不含刻意运动)= TDEE,总消耗 = TDEE + 运动打卡,净差按 7700 kcal ≈ 1 kg 折算;
+5. 汇总按天落 `ai_summaries` 缓存,重新生成即覆盖;GET 接口永不回显 API Key。
 
 ### REST API(与 v0.2 完全兼容)
 
@@ -78,6 +109,15 @@ CREATE UNIQUE INDEX idx_todos_uid_date ON todos(uid, date_key); -- ICS 去重
 | POST | `/api/todos/:id/toggle` | 切换完成态 → Todo |
 | DELETE | `/api/todos/:id` | 删除 → `{ ok }` |
 | POST | `/api/ics/import` | 导入:`{ url }` → `{ fetchedEvents, imported, duplicates, skippedRecurring, outOfWindow }` |
+| GET | `/api/health` | 全量打卡:`{ "YYYY-MM-DD": HealthLog[] }` |
+| POST | `/api/health` | 添加:`{ dateKey, kind, text, meal?, kcal? }` → HealthLog |
+| PATCH | `/api/health/:id` | 改文字/餐次/热量(`kcal:null` = 恢复待估) |
+| DELETE | `/api/health/:id` | 删除 → `{ ok }` |
+| GET/PUT | `/api/profile` | 健康档案(未建返回 null;PUT 校验后整行 upsert) |
+| GET/PUT | `/api/ai/config` | AI 服务配置 `{ baseUrl, model, hasKey }`;**GET 永不返回 key**,PUT 空串=清除 |
+| GET | `/api/ai/summary/:dateKey` | 缓存的汇总(null = 未生成) |
+| POST | `/api/ai/summary` | `{ dateKey }` → 调 AI 估算+点评并落库 → AiSummary |
+| DELETE | `/api/ai/summary/:dateKey` | 清除当日汇总 → `{ ok }` |
 
 ## 4. 目录结构
 
@@ -88,17 +128,22 @@ mycal/
 ├── wrangler.jsonc              # Workers + D1(migrations_dir) + SPA 静态资产
 ├── migrations/                 # ★ 表结构唯一事实源(按序应用)
 │   ├── 0001_init.sql
-│   └── 0002_uid_date_unique.sql
+│   ├── 0002_uid_date_unique.sql
+│   └── 0003_health_diary.sql   # 打卡/档案/AI 汇总/设置 4 张表
 ├── worker/                     # ★ API 后端(跑在 Cloudflare Workers)
-│   ├── index.ts                # fetch 入口 + 路由
-│   ├── db.ts                   # D1 查询(CRUD / 批量导入去重)
+│   ├── index.ts                # fetch 入口 + 路由(正则匹配,HttpError 统一转状态码)
+│   ├── db.ts                   # D1 查询(待办/打卡/档案/汇总/设置)
+│   ├── ai.ts                   # AI 每日汇总(OpenAI 兼容调用 + BMR/TDEE 估算)
+│   ├── validate.ts             # dateKey/kcal/档案入参校验
 │   ├── ics.ts                  # ICS 解析/展开
-│   ├── env.d.ts                # Env 绑定类型
-│   └── types.ts                # Todo / TodoRow
-├── src/                        # React 前端(不变)
-│   ├── main.tsx / App.tsx / types.ts / utils/date.ts
-│   ├── hooks/useTodos.ts
-│   └── components/             # Calendar / DayCell / DayPanel / ImportModal / Toasts
+│   ├── env.d.ts                # Env 绑定类型(D1 + AI_* 兜底变量)
+│   └── types.ts                # Todo / HealthLog / Profile / AiSummary …
+├── src/                        # React 前端
+│   ├── main.tsx / App.tsx / types.ts
+│   ├── utils/date.ts  utils/api.ts        # 日期计算 / 共享 fetch 封装
+│   ├── hooks/useTodos.ts  hooks/useHealth.ts
+│   └── components/             # Calendar / DayCell / DayPanel / DiaryPanel /
+│                               # ImportModal / ProfileModal / AiConfigModal / Toasts
 └── docs/
     └── sample.ics              # ICS 导入本地测试样例
 ```
@@ -107,10 +152,12 @@ mycal/
 
 1. 打开应用 → 默认当月、选中今天,自动从后端加载数据;
 2. 点任意日期 → 右侧面板切换为该天;
-3. **待办与日程分 Tab 展示**:待办 Tab 勾选/添加/删除;日程 Tab 时间轴展示;
+3. **待办 / 日程 / 打卡分 Tab 展示**:待办 Tab 勾选/添加/删除;日程 Tab 时间轴;打卡 Tab 记饮食/运动;
 4. **Ctrl+I(或顶栏「订阅」)→ 弹窗粘贴 .ics 链接 → 导入** → 弹窗立即关闭,后台拉取解析,完成后 Toast 提示;
-5. 日历圆点:蓝 = 有日程,琥珀 = 有待办,两种可同时出现;选中日圆点变白;
-6. 顶栏月亮/太阳按钮切换深浅色主题(记忆在 localStorage)。
+5. **打卡日记**:切饮食/运动,记「一碗牛肉面」即可;热量可留空由 AI 估;点条目上的 kcal 可手动修正(AI 不再覆盖)或清空回「待估」;
+6. **AI 汇总**:先顶栏「档案」填四要素 + 「AI」配好服务 → 点「生成今日汇总」→ AI 估热量并结合 BMR/TDEE 点评,结果按天缓存,可清除重生成;
+7. 日历圆点:蓝 = 有日程,琥珀 = 有待办,绿 = 有打卡,可并存;选中日圆点变白;
+8. 顶栏月亮/太阳按钮切换深浅色主题(记忆在 localStorage)。
 
 ## 6. 启动与部署
 
@@ -143,4 +190,5 @@ pnpm run preview
 1. ✅ v0.1:规划 → 日历+待办(localStorage 版)
 2. ✅ v0.2:SQLite 持久化 + REST API;ICS 订阅导入;待办/日程双 Tab
 3. ✅ v0.3:**迁移到 Cloudflare Workers + D1**:Express 退役,API 重写为 Worker;表结构改为迁移文件管理(含去重唯一索引);本地 dev 由 Cloudflare Vite 插件内嵌 workerd;deploy 前置远端迁移;清理原型页/草图生成器等历史产物
-4. ⬜ v2 候选:订阅定时自动同步(Cron Triggers)、RRULE 展开、待办文字编辑、优先级、导出 JSON 备份
+4. ✅ v0.3.1:**打卡日记 + AI 每日汇总**:饮食/运动条目、热量三态(手动/AI/待估)、健康档案(BMR/TDEE)、OpenAI 兼容汇总按天缓存;日历第三圆点(绿)
+5. ⬜ v2 候选:订阅定时自动同步(Cron Triggers)、RRULE 展开、待办文字编辑、优先级、导出 JSON 备份;打卡体重曲线、AI 流式输出

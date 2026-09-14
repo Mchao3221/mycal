@@ -1,17 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { Todo, TodoStore } from '../types'
-
-async function api<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
-    headers: { 'Content-Type': 'application/json' },
-    ...init,
-  })
-  if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as { error?: string } | null
-    throw new Error(body?.error ?? `${res.status} ${res.statusText}`)
-  }
-  return res.json() as Promise<T>
-}
+import { api } from '../utils/api'
 
 /** 待办/日程状态,数据存本地 SQLite,经 REST API 读写 */
 export function useTodos() {

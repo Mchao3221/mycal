@@ -2,8 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Calendar } from './components/Calendar'
 import { DayPanel } from './components/DayPanel'
 import { ImportModal } from './components/ImportModal'
+import { ProfileModal } from './components/ProfileModal'
+import { AiConfigModal } from './components/AiConfigModal'
 import { Toasts, type ToastData } from './components/Toasts'
 import { useTodos } from './hooks/useTodos'
+import { useHealth } from './hooks/useHealth'
 import { todayDate, todayKey } from './utils/date'
 import type { DotMark } from './types'
 
@@ -20,8 +23,11 @@ export default function App() {
   const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() })
   const [selectedKey, setSelectedKey] = useState<string>(() => todayKey())
   const { store, getDay, addTodo, toggleTodo, removeTodo, reload } = useTodos()
+  const { getDay: getHealthDay, addLog, patchLog, removeLog, store: healthStore } = useHealth()
 
   const [importOpen, setImportOpen] = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false)
+  const [aiConfigOpen, setAiConfigOpen] = useState(false)
   const [toasts, setToasts] = useState<ToastData[]>([])
   const toastSeq = useRef(0)
   const [isDark, setIsDark] = useState(
@@ -41,7 +47,11 @@ export default function App() {
         e.preventDefault()
         setImportOpen(true)
       }
-      if (e.key === 'Escape') setImportOpen(false)
+      if (e.key === 'Escape') {
+        setImportOpen(false)
+        setProfileOpen(false)
+        setAiConfigOpen(false)
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -73,7 +83,7 @@ export default function App() {
     [pushToast, reload],
   )
 
-  // 圆点标记:日程=蓝,待办=琥珀,同天可并存
+  // 圆点标记:日程=蓝,待办=琥珀,打卡=绿,同天可并存
   const marks = useMemo(() => {
     const m = new Map<string, DotMark[]>()
     for (const [k, list] of Object.entries(store)) {
@@ -83,8 +93,12 @@ export default function App() {
       if (list.some(t => t.source !== 'ics')) mk.push('todo')
       m.set(k, mk)
     }
+    for (const [k, list] of Object.entries(healthStore)) {
+      if (!list.length) continue
+      m.set(k, [...(m.get(k) ?? []), 'health'])
+    }
     return m
-  }, [store])
+  }, [store, healthStore])
 
   const prevMonth = () =>
     setYm(({ y, m }) => (m === 0 ? { y: y - 1, m: 11 } : { y, m: m - 1 }))
@@ -129,6 +143,22 @@ export default function App() {
           >
             订阅
           </button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => setProfileOpen(true)}
+            title="健康档案(AI 汇总会结合身体情况)"
+          >
+            档案
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => setAiConfigOpen(true)}
+            title="AI 服务配置"
+          >
+            AI
+          </button>
 
           <button
             type="button"
@@ -167,13 +197,22 @@ export default function App() {
           dateKey={selectedKey}
           todos={getDay(selectedKey).filter(t => t.source !== 'ics')}
           events={getDay(selectedKey).filter(t => t.source === 'ics')}
+          diaryLogs={getHealthDay(selectedKey)}
           onAdd={text => void addTodo(selectedKey, text)}
           onToggle={id => void toggleTodo(selectedKey, id)}
           onRemove={id => void removeTodo(selectedKey, id)}
+          onDiaryAdd={input => addLog(selectedKey, input)}
+          onDiaryPatch={(id, patch) => patchLog(selectedKey, id, patch)}
+          onDiaryRemove={id => removeLog(selectedKey, id)}
+          notify={pushToast}
+          onOpenProfile={() => setProfileOpen(true)}
+          onOpenAiConfig={() => setAiConfigOpen(true)}
         />
       </main>
 
       <ImportModal open={importOpen} onClose={() => setImportOpen(false)} onSubmit={url => void importIcs(url)} />
+      <ProfileModal open={profileOpen} onClose={() => setProfileOpen(false)} notify={pushToast} />
+      <AiConfigModal open={aiConfigOpen} onClose={() => setAiConfigOpen(false)} notify={pushToast} />
       <Toasts items={toasts} onDismiss={id => setToasts(ts => ts.filter(t => t.id !== id))} />
     </div>
   )
