@@ -17,8 +17,6 @@ interface Props {
   onDiaryPatch: (id: string, patch: Partial<HealthLogInput>) => Promise<void>
   onDiaryRemove: (id: string) => Promise<void>
   notify: (kind: 'success' | 'error', text: string) => void
-  onOpenProfile: () => void
-  onOpenAiConfig: () => void
 }
 
 type Tab = 'todo' | 'diary'
@@ -34,8 +32,6 @@ export function DayPanel({
   onDiaryPatch,
   onDiaryRemove,
   notify,
-  onOpenProfile,
-  onOpenAiConfig,
 }: Props) {
   const [tab, setTab] = useState<Tab>('todo')
   const [draft, setDraft] = useState('')
@@ -201,8 +197,6 @@ export function DayPanel({
           onPatch={onDiaryPatch}
           onRemove={onDiaryRemove}
           notify={notify}
-          onOpenProfile={onOpenProfile}
-          onOpenAiConfig={onOpenAiConfig}
         />
       )}
     </section>

@@ -206,8 +206,6 @@ export default function App() {
           onDiaryPatch={(id, patch) => patchLog(selectedKey, id, patch)}
           onDiaryRemove={id => removeLog(selectedKey, id)}
           notify={pushToast}
-          onOpenProfile={() => setProfileOpen(true)}
-          onOpenAiConfig={() => setAiConfigOpen(true)}
         />
       </main>
 

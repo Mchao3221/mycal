@@ -10,8 +10,6 @@ interface Props {
   onPatch: (id: string, patch: Partial<HealthLogInput>) => Promise<void>
   onRemove: (id: string) => Promise<void>
   notify: (kind: 'success' | 'error', text: string) => void
-  onOpenProfile: () => void
-  onOpenAiConfig: () => void
 }
 
 const MEAL_LABEL: Record<MealSlot, string> = {
@@ -39,8 +37,6 @@ export function DiaryPanel({
   onPatch,
   onRemove,
   notify,
-  onOpenProfile,
-  onOpenAiConfig,
 }: Props) {
   const [kind, setKind] = useState<HealthKind>('diet')
   const [meal, setMeal] = useState<MealSlot>(defaultMeal)
@@ -246,19 +242,6 @@ export function DiaryPanel({
         {missingKcal > 0 && (
           <span className="font-mono text-xs text-base-content/40">{missingKcal} 条待估</span>
         )}
-        <span className="ml-auto flex items-center gap-1">
-          <button
-            type="button"
-            className="btn btn-ghost btn-xs"
-            onClick={onOpenProfile}
-            title="编辑健康档案(供 AI 结合身体情况评估)"
-          >
-            档案
-          </button>
-          <button type="button" className="btn btn-ghost btn-xs" onClick={onOpenAiConfig} title="配置 AI 服务">
-            AI 设置
-          </button>
-        </span>
       </div>
 
       {/* 快速录入 */}
