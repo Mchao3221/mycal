@@ -6,9 +6,13 @@
 @source "../index.html";
 
 @theme {
-  --font-sans: system-ui, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-  --font-display: "Iowan Old Style", "Charter", Georgia, "Times New Roman", serif;
-  --font-mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+  /* 全站统一用本机已安装的 Maple Mono NF CN(Thin~ExtraBold 全字重 + 等宽中文)。
+     它是本机字体:没装该字体的设备会按后面的回退栈降级,不会破版。
+     想让大字号标题(日期/热量数字)回到原来的衬线,只需把 --font-display 改回
+     "Iowan Old Style", "Charter", Georgia, "Times New Roman", serif */
+  --font-sans: "Maple Mono NF CN", system-ui, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-display: "Maple Mono NF CN", "Iowan Old Style", "Charter", Georgia, "Times New Roman", serif;
+  --font-mono: "Maple Mono NF CN", ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
 }
 
 /* 主题:浅色 mycal(默认)+ 内置深色 dim,顶栏按钮切换 */
