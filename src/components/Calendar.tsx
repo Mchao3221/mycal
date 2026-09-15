@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { DayCell } from './DayCell'
 import { WEEKDAYS, monthMatrix, todayKey, weekOfYear } from '../utils/date'
-import type { DotMark } from '../types'
+import type { DotMark, Todo } from '../types'
 
 interface Props {
   year: number
@@ -10,6 +10,9 @@ interface Props {
   selectedKey: string
   /** 各日期标记(用于圆点着色) */
   marks: ReadonlyMap<string, DotMark[]>
+  /** 选中日的 ICS 日程(source === 'ics'),展示在月历下方 */
+  events: Todo[]
+  onRemoveEvent: (id: string) => void
   onPick: (key: string) => void
   onPrevMonth: () => void
   onNextMonth: () => void
@@ -21,6 +24,8 @@ export function Calendar({
   month,
   selectedKey,
   marks,
+  events,
+  onRemoveEvent,
   onPick,
   onPrevMonth,
   onNextMonth,
@@ -29,10 +34,11 @@ export function Calendar({
   const cells = useMemo(() => monthMatrix(year, month), [year, month])
   const todayK = todayKey()
 
-  const weekTag = useMemo(() => {
-    const [y, m, d] = selectedKey.split('-').map(Number)
-    return `第 ${weekOfYear(new Date(y, m - 1, d))} 周`
-  }, [selectedKey])
+  const [sy, sm, sd] = selectedKey.split('-').map(Number)
+  const weekTag = useMemo(
+    () => `第 ${weekOfYear(new Date(sy, sm - 1, sd))} 周`,
+    [sy, sm, sd],
+  )
 
   return (
     <section
@@ -107,6 +113,40 @@ export function Calendar({
           打卡
         </span>
       </div>
+
+      {events.length > 0 && (
+        <div className="mt-3 border-t border-base-300 pt-3">
+          <h3 className="mb-1 font-mono text-[11px] uppercase tracking-[0.08em] text-base-content/45">
+            日程 · {sm} 月 {sd} 日
+          </h3>
+          <ul className="m-0 max-h-[260px] list-none overflow-y-auto p-0 pr-1">
+            {events.map(t => {
+              const mt = t.text.match(/^(\d{2}:\d{2})\s+(.*)$/)
+              return (
+                <li
+                  key={t.id}
+                  className="grid grid-cols-[64px_1fr] items-start gap-3 border-b border-base-300 py-2 last:border-b-0"
+                >
+                  <div className="pt-0.5 font-mono text-[12px] tabular-nums text-primary">
+                    {mt ? mt[1] : '全天'}
+                  </div>
+                  <div className="relative pl-3 before:absolute before:bottom-1 before:left-0 before:top-1 before:w-[3px] before:rounded-full before:bg-primary/30">
+                    <div className="text-sm leading-snug">{mt ? mt[2] : t.text}</div>
+                    <button
+                      type="button"
+                      className="text-xs text-base-content/30 transition-colors hover:text-secondary"
+                      onClick={() => onRemoveEvent(t.id)}
+                      aria-label={`移除日程:${t.text}`}
+                    >
+                      ✕ 移除
+                    </button>
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      )}
     </section>
   )
 }

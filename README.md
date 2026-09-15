@@ -3,7 +3,7 @@
 一个「日历 + 每日待办」的 Web 应用:看月历,点哪天,就管哪天的事。
 
 - 📅 **月历视图**:按月展示、上/下月切换、一键回到今天,「今天」与选中日高亮;
-- ✅ **待办 / 日程 / 打卡三 Tab**:待办可添加(回车/按钮)、勾选完成、删除;日程以时间轴展示,可移除单条;打卡记录每日饮食与运动;
+- ✅ **待办 / 打卡双 Tab,日程在月历下方**:待办可添加(回车/按钮)、勾选完成、删除;选中日的 ICS 日程以时间轴显示在月历下方(可移除单条);打卡 Tab 记每日饮食与运动;
 - 🔵🟡🟢 **圆点标记**:蓝 = 有日程,琥珀 = 有待办,绿 = 有打卡,可并存;
 - 🍽 **打卡日记 + AI 汇总**:记录每日吃动,一键让 AI(OpenAI 兼容)估算热量并结合健康档案(BMR/TDEE)给出今日摄入/消耗收支点评;
 - 📥 **ICS 订阅导入**:`Ctrl+I` 或顶栏「订阅」呼出弹窗,粘贴订阅链接即可把日程按日期铺进日历,重复导入零副作用(同 UID 同一天只入库一次);
@@ -64,6 +64,8 @@ pnpm run deploy
 ```
 
 本地预览生产构建:`pnpm run preview`。
+
+**部署分工约定**:日常开发只需把代码推到 GitHub,Cloudflare 经仓库集成自动构建部署;涉及远程 D1 的 SQL(迁移应用、数据修正)写在 `docs/sql/`,由维护者在 Cloudflare 网页 D1 Console 执行。
 
 ## ICS 订阅导入
 
@@ -127,7 +129,8 @@ mycal/
 │   └── components/               # Calendar / DayCell / DayPanel / DiaryPanel /
 │                                 # ImportModal / ProfileModal / AiConfigModal / Toasts
 └── docs/
-    └── sample.ics                # ICS 导入本地测试样例
+    ├── sample.ics                # ICS 导入本地测试样例
+    └── sql/                      # 需在 Cloudflare 网页 D1 Console 执行的脚本
 ```
 
 ## 路线图

@@ -19,6 +19,13 @@ pnpm run deploy         # build → 远端 D1 迁移 → wrangler deploy(顺序�
 
 无测试框架;`pnpm run build` 里的双 `tsc --noEmit` 是唯一的静态检查手段。
 
+## 部署分工(用户约定,必须遵守)
+
+- **AI 只负责代码**:编写/修改代码 → 保证 `pnpm run build`(两个 tsconfig 的 tsc)无编译错误 → 提交并推送 GitHub;Cloudflare 由 GitHub 集成自动 CI/CD 完成构建部署。
+- **不要自行执行任何远程 Cloudflare 操作**:`wrangler deploy`、`wrangler login`、`wrangler d1 migrations apply --remote`、`wrangler d1 execute --remote` 等一律禁止。
+- 需要改动远程数据库时(新增迁移、数据修正):**直接写出 SQL 脚本**(存档到 `docs/sql/描述.sql` 并贴在回复里),由用户在 Cloudflare 网页 D1 Console 亲自执行。
+- 本地 D1(`.wrangler/state`,miniflare)不受限:`pnpm db:migrate:local` 与本地 workerd 验证照常进行。
+
 ## 架构要点
 
 - **两套 tsconfig、两个运行环境**:`tsconfig.json` 编译 `src/`(浏览器 + DOM),`tsconfig.worker.json` 编译 `worker/`(Cloudflare Workers 类型)。前后端不共享代码;新增全局类型需改对应 env.d.ts(`worker/env.d.ts` 声明 D1 绑定 `mycalDB`)。

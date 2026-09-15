@@ -8,8 +8,6 @@ interface Props {
   dateKey: string
   /** 本地待办(source !== 'ics') */
   todos: Todo[]
-  /** ICS 日程(source === 'ics') */
-  events: Todo[]
   /** 当天打卡记录 */
   diaryLogs: HealthLog[]
   onAdd: (text: string) => void
@@ -23,12 +21,11 @@ interface Props {
   onOpenAiConfig: () => void
 }
 
-type Tab = 'todo' | 'sched' | 'diary'
+type Tab = 'todo' | 'diary'
 
 export function DayPanel({
   dateKey,
   todos,
-  events,
   diaryLogs,
   onAdd,
   onToggle,
@@ -98,7 +95,7 @@ export function DayPanel({
       </div>
 
       <div
-        className="mb-4 grid grid-cols-3 gap-1 rounded-xl bg-base-300/60 p-1"
+        className="mb-4 grid grid-cols-2 gap-1 rounded-xl bg-base-300/60 p-1"
         role="tablist"
       >
         <button
@@ -109,15 +106,6 @@ export function DayPanel({
           onClick={() => setTab('todo')}
         >
           待办 <span className="seg-cnt">{todos.length}</span>
-        </button>
-        <button
-          type="button"
-          className={`seg-btn ${tab === 'sched' ? 'active' : ''}`}
-          role="tab"
-          aria-selected={tab === 'sched'}
-          onClick={() => setTab('sched')}
-        >
-          日程 <span className="seg-cnt">{events.length}</span>
         </button>
         <button
           type="button"
@@ -205,39 +193,6 @@ export function DayPanel({
             </button>
           </form>
         </>
-      ) : tab === 'sched' ? (
-        <ul className="m-0 max-h-[520px] list-none overflow-y-auto p-0 pr-1">
-          {events.map(t => {
-            const mt = t.text.match(/^(\d{2}:\d{2})\s+(.*)$/)
-            return (
-              <li
-                key={t.id}
-                className="grid grid-cols-[96px_1fr] items-start gap-3.5 border-b border-base-300 py-3"
-              >
-                <div className="pt-0.5 font-mono text-[13px] tabular-nums text-primary">
-                  {mt ? mt[1] : '全天'}
-                </div>
-                <div className="relative pl-4 before:absolute before:bottom-1.5 before:left-0 before:top-1.5 before:w-[3px] before:rounded-full before:bg-primary/30">
-                  <div className="text-[15px] leading-snug">{mt ? mt[2] : t.text}</div>
-                  <button
-                    type="button"
-                    className="mt-1 text-xs text-base-content/30 transition-colors hover:text-secondary"
-                    onClick={() => onRemove(t.id)}
-                    aria-label={`移除日程:${t.text}`}
-                  >
-                    ✕ 移除
-                  </button>
-                </div>
-              </li>
-            )
-          })}
-          {events.length === 0 && (
-            <li className="py-8 text-center text-sm text-base-content/50">
-              这天没有日程
-              <small className="mt-1.5 block font-mono text-xs">按 Ctrl+I 导入 .ics 订阅</small>
-            </li>
-          )}
-        </ul>
       ) : (
         <DiaryPanel
           dateKey={dateKey}

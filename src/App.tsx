@@ -187,6 +187,8 @@ export default function App() {
           month={ym.m}
           selectedKey={selectedKey}
           marks={marks}
+          events={getDay(selectedKey).filter(t => t.source === 'ics')}
+          onRemoveEvent={id => void removeTodo(selectedKey, id)}
           onPick={setSelectedKey}
           onPrevMonth={prevMonth}
           onNextMonth={nextMonth}
@@ -196,7 +198,6 @@ export default function App() {
         <DayPanel
           dateKey={selectedKey}
           todos={getDay(selectedKey).filter(t => t.source !== 'ics')}
-          events={getDay(selectedKey).filter(t => t.source === 'ics')}
           diaryLogs={getHealthDay(selectedKey)}
           onAdd={text => void addTodo(selectedKey, text)}
           onToggle={id => void toggleTodo(selectedKey, id)}
