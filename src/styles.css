@@ -5,14 +5,51 @@
 @source "../src/**/*.{ts,tsx}";
 @source "../index.html";
 
+/* Maple Mono NF CN 自托管子集:字体文件放在 public/fonts/,构建时作为静态资源一起部署。
+   每个字重约 1.7 MiB(woff2)= 拉丁/数字/标点/假名 + GB2312 全部 6763 汉字,
+   已剔除代码连字等 OpenType 特性与 hinting。
+   src 里 local() 放最前:装了完整字体的设备(比如开发机)一个字节都不下载;
+   其它设备按需拉用到的字重;GB2312 之外的生僻字按下面的字体栈回退到系统中文字体。 */
+@font-face {
+  font-family: "Maple Mono NF CN";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: local("Maple Mono NF CN"), local("Maple Mono NF CN Regular"), local("MapleMono-NF-CN-Regular"),
+    url("/fonts/maple-nf-cn-regular.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Maple Mono NF CN";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: local("Maple Mono NF CN Medium"), local("MapleMono-NF-CN-Medium"),
+    url("/fonts/maple-nf-cn-medium.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Maple Mono NF CN";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: local("Maple Mono NF CN SemiBold"), local("MapleMono-NF-CN-SemiBold"),
+    url("/fonts/maple-nf-cn-semibold.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Maple Mono NF CN";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: local("Maple Mono NF CN Bold"), local("MapleMono-NF-CN-Bold"),
+    url("/fonts/maple-nf-cn-bold.woff2") format("woff2");
+}
+
 @theme {
-  /* 全站统一用本机已安装的 Maple Mono NF CN(Thin~ExtraBold 全字重 + 等宽中文)。
-     它是本机字体:没装该字体的设备会按后面的回退栈降级,不会破版。
+  /* 全站统一 Maple Mono NF CN(等宽 + 自带中文);回退栈兜住没装字体和生僻字两种情况。
      想让大字号标题(日期/热量数字)回到原来的衬线,只需把 --font-display 改回
      "Iowan Old Style", "Charter", Georgia, "Times New Roman", serif */
-  --font-sans: "Maple Mono NF CN", system-ui, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-  --font-display: "Maple Mono NF CN", "Iowan Old Style", "Charter", Georgia, "Times New Roman", serif;
-  --font-mono: "Maple Mono NF CN", ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+  --font-sans: "Maple Mono NF CN", system-ui, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  --font-display: "Maple Mono NF CN", "Iowan Old Style", "Charter", Georgia, "PingFang SC", "Microsoft YaHei", serif;
+  --font-mono: "Maple Mono NF CN", ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", monospace;
 }
 
 /* 主题:浅色 mycal(默认)+ 内置深色 dim,顶栏按钮切换 */

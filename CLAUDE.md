@@ -43,3 +43,5 @@ pnpm run deploy         # build → 远端 D1 迁移 → wrangler deploy(顺序�
 - UI 文案、注释、错误消息均为中文,新增代码保持一致。
 - 主题切换用 daisyUI 的 `data-theme`(`mycal` 浅色 / `dim` 深色),记忆在 localStorage。
 - `docs/sample.ics` 是 ICS 导入的本地测试样例。
+- **字体**:全站 Maple Mono NF CN。`src/styles.css` 顶部四条 `@font-face`(400/500/600/700)先 `local()` 后 `url("/fonts/*.woff2")`,所以装了完整字体的设备不下载任何东西;`public/fonts/` 里是提交进仓库的 GB2312 子集(6763 汉字 + 拉丁/标点,4 字重共约 6.7 MiB),用 `python tools/subset_fonts.py` 重新生成(需 `pip install fonttools brotli`,源 TTF 取本机 `C:\Windows\Fonts`)。GB2312 之外的生僻字按字体栈回退系统中文字体。
+- **桌面端是一屏工作台**:`lg` 及以上根容器 `h-dvh + overflow-hidden`,顶栏固定、左右两栏各自内部滚动(`.panel-scroll`);去掉这套高度约束就会重新出现整页滚动条。
