@@ -121,10 +121,12 @@ export default function App() {
     }
   }
 
+  // 桌面端(lg 及以上)锁定为整屏工作台:顶栏不动,左右两栏各自内部滚动,
+  // 右侧内容再多也不会把整页撑出滚动条;窄屏仍保持整页滚动的常规移动端体验。
   return (
-    <div className="min-h-screen bg-base-200">
+    <div className="flex min-h-dvh flex-col bg-base-200 lg:h-dvh lg:overflow-hidden">
       {/* 顶栏 */}
-      <header className="sticky top-0 z-20 border-b border-base-300 bg-base-100/85 backdrop-blur-md">
+      <header className="sticky top-0 z-20 flex-none border-b border-base-300 bg-base-100/85 backdrop-blur-md">
         <div className="mx-auto flex w-full max-w-[1920px] flex-wrap items-center gap-4 px-8 py-3">
           <span className="mr-auto inline-flex items-center gap-2.5">
             <span className="btn btn-primary btn-square btn-sm font-mono text-xs font-bold">M</span>
@@ -180,8 +182,8 @@ export default function App() {
         </div>
       </header>
 
-      {/* 工作区 */}
-      <main className="mx-auto grid w-full max-w-[1920px] grid-cols-1 items-start gap-6 px-8 py-8 lg:grid-cols-[1.05fr_1fr]">
+      {/* 工作区:两栏等高,超出部分在卡片内滚 */}
+      <main className="mx-auto grid w-full max-w-[1920px] flex-1 grid-cols-1 items-start gap-6 px-8 py-8 lg:min-h-0 lg:grid-cols-[1.05fr_1fr] lg:items-stretch lg:overflow-hidden">
         <Calendar
           year={ym.y}
           month={ym.m}

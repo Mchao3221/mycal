@@ -51,12 +51,13 @@ export function DayPanel({
     setDraft('')
   }
 
+  // 桌面端卡片高度锁定在列内:顶部信息与录入框固定,只有列表/汇总区自己滚动
   return (
     <section
-      className="rounded-box border border-base-300 bg-base-100 p-6 shadow-sm lg:p-7"
+      className="rounded-box border border-base-300 bg-base-100 p-6 shadow-sm lg:flex lg:h-full lg:min-h-0 lg:flex-col lg:overflow-hidden lg:p-7"
       aria-label="当日详情"
     >
-      <header className="flex items-center justify-between">
+      <header className="flex items-center justify-between lg:shrink-0">
         <span className="font-mono text-[11px] uppercase tracking-[0.08em] text-base-content/50">
           当日概览
         </span>
@@ -66,7 +67,7 @@ export function DayPanel({
         </span>
       </header>
 
-      <h2 className="mb-0 mt-1 leading-none">
+      <h2 className="mb-0 mt-1 leading-none lg:shrink-0">
         <span className="font-display text-[clamp(30px,3.2vw,44px)] font-semibold tracking-tight">
           {m} 月 {d} 日
         </span>
@@ -74,11 +75,11 @@ export function DayPanel({
           {y}
         </span>
       </h2>
-      <p className="mb-5 mt-2 font-mono text-[13px] text-base-content/55">
+      <p className="mb-5 mt-2 font-mono text-[13px] text-base-content/55 lg:shrink-0">
         第 {weekOfYear(dateObj)} 周
       </p>
 
-      <div className="mb-5 flex items-center gap-3">
+      <div className="mb-5 flex items-center gap-3 lg:shrink-0">
         <span className="whitespace-nowrap font-mono text-xs text-base-content/55">
           {doneCount} / {todos.length} 待办完成
         </span>
@@ -91,7 +92,7 @@ export function DayPanel({
       </div>
 
       <div
-        className="mb-4 grid grid-cols-2 gap-1 rounded-xl bg-base-300/60 p-1"
+        className="mb-4 grid grid-cols-2 gap-1 rounded-xl bg-base-300/60 p-1 lg:shrink-0"
         role="tablist"
       >
         <button
@@ -114,91 +115,93 @@ export function DayPanel({
         </button>
       </div>
 
-      {tab === 'todo' ? (
-        <>
-          <ul className="m-0 max-h-[520px] list-none overflow-y-auto p-0 pr-1">
-            {todos.map(t => (
-              <li key={t.id} className="flex items-start gap-3 border-b border-base-300 py-3">
-                <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-3">
-                  <input
-                    type="checkbox"
-                    className="sr-only"
-                    checked={t.done}
-                    onChange={() => onToggle(t.id)}
-                  />
-                  <span
-                    className={`mt-0.5 grid size-5 flex-none place-items-center rounded-md border-[1.5px] transition-colors ${
-                      t.done ? 'border-primary bg-primary' : 'border-base-300'
-                    }`}
-                  >
-                    <svg
-                      className={`size-3 stroke-base-100 transition-opacity ${
-                        t.done ? 'opacity-100' : 'opacity-0'
+      <div className="flex min-h-0 flex-col lg:flex-1">
+        {tab === 'todo' ? (
+          <>
+            <ul className="panel-scroll m-0 max-h-[520px] list-none overflow-y-auto p-0 pr-1 lg:max-h-none lg:min-h-0 lg:flex-1">
+              {todos.map(t => (
+                <li key={t.id} className="flex items-start gap-3 border-b border-base-300 py-3">
+                  <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-3">
+                    <input
+                      type="checkbox"
+                      className="sr-only"
+                      checked={t.done}
+                      onChange={() => onToggle(t.id)}
+                    />
+                    <span
+                      className={`mt-0.5 grid size-5 flex-none place-items-center rounded-md border-[1.5px] transition-colors ${
+                        t.done ? 'border-primary bg-primary' : 'border-base-300'
                       }`}
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      strokeWidth="3"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
                     >
-                      <path d="M20 6 9 17l-5-5" />
-                    </svg>
-                  </span>
-                  <span
-                    className={`text-[15px] leading-snug ${
-                      t.done ? 'text-base-content/45 line-through decoration-base-300' : ''
-                    }`}
+                      <svg
+                        className={`size-3 stroke-base-100 transition-opacity ${
+                          t.done ? 'opacity-100' : 'opacity-0'
+                        }`}
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M20 6 9 17l-5-5" />
+                      </svg>
+                    </span>
+                    <span
+                      className={`text-[15px] leading-snug ${
+                        t.done ? 'text-base-content/45 line-through decoration-base-300' : ''
+                      }`}
+                    >
+                      {t.text}
+                    </span>
+                  </label>
+                  <button
+                    type="button"
+                    className="grid size-[26px] flex-none place-items-center rounded-md text-base-content/30 transition-colors hover:bg-secondary/10 hover:text-secondary"
+                    onClick={() => onRemove(t.id)}
+                    aria-label={`删除:${t.text}`}
                   >
-                    {t.text}
-                  </span>
-                </label>
-                <button
-                  type="button"
-                  className="grid size-[26px] flex-none place-items-center rounded-md text-base-content/30 transition-colors hover:bg-secondary/10 hover:text-secondary"
-                  onClick={() => onRemove(t.id)}
-                  aria-label={`删除:${t.text}`}
-                >
-                  ✕
-                </button>
-              </li>
-            ))}
-            {todos.length === 0 && (
-              <li className="py-8 text-center text-sm text-base-content/50">
-                这天还没有待办
-                <small className="mt-1.5 block font-mono text-xs">在下方输入,回车即可添加</small>
-              </li>
-            )}
-          </ul>
+                    ✕
+                  </button>
+                </li>
+              ))}
+              {todos.length === 0 && (
+                <li className="py-8 text-center text-sm text-base-content/50">
+                  这天还没有待办
+                  <small className="mt-1.5 block font-mono text-xs">在下方输入,回车即可添加</small>
+                </li>
+              )}
+            </ul>
 
-          <form
-            className="mt-4 flex gap-2"
-            onSubmit={e => {
-              e.preventDefault()
-              submit()
-            }}
-          >
-            <input
-              className="input input-bordered w-full bg-base-100"
-              value={draft}
-              onChange={e => setDraft(e.target.value)}
-              placeholder="新待办…回车添加"
-              aria-label="新待办"
-            />
-            <button type="submit" className="btn btn-primary px-5" disabled={!draft.trim()}>
-              添加
-            </button>
-          </form>
-        </>
-      ) : (
-        <DiaryPanel
-          dateKey={dateKey}
-          logs={diaryLogs}
-          onAdd={onDiaryAdd}
-          onPatch={onDiaryPatch}
-          onRemove={onDiaryRemove}
-          notify={notify}
-        />
-      )}
+            <form
+              className="mt-4 flex gap-2 lg:shrink-0"
+              onSubmit={e => {
+                e.preventDefault()
+                submit()
+              }}
+            >
+              <input
+                className="input input-bordered w-full bg-base-100"
+                value={draft}
+                onChange={e => setDraft(e.target.value)}
+                placeholder="新待办…回车添加"
+                aria-label="新待办"
+              />
+              <button type="submit" className="btn btn-primary px-5" disabled={!draft.trim()}>
+                添加
+              </button>
+            </form>
+          </>
+        ) : (
+          <DiaryPanel
+            dateKey={dateKey}
+            logs={diaryLogs}
+            onAdd={onDiaryAdd}
+            onPatch={onDiaryPatch}
+            onRemove={onDiaryRemove}
+            notify={notify}
+          />
+        )}
+      </div>
     </section>
   )
 }

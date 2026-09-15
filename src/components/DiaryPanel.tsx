@@ -229,10 +229,11 @@ export function DiaryPanel({
 
   const netNegative = (summary?.netKcal ?? 0) <= 0
 
+  // 合计与录入框始终可见,记录列表 + AI 汇总一起在卡片内滚动(不撑出页面滚动条)
   return (
-    <div>
+    <div className="flex flex-col lg:min-h-0 lg:flex-1">
       {/* 当日合计 + 快捷入口 */}
-      <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+      <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 lg:shrink-0">
         <span className="font-mono text-xs text-base-content/60">
           摄入 <b className="text-warning">{intakeKcal}</b> kcal
         </span>
@@ -246,7 +247,7 @@ export function DiaryPanel({
 
       {/* 快速录入 */}
       <form
-        className="mb-4"
+        className="mb-4 lg:shrink-0"
         onSubmit={e => {
           e.preventDefault()
           void submit()
@@ -305,112 +306,114 @@ export function DiaryPanel({
         </div>
       </form>
 
-      {/* 列表 */}
-      <div className="mb-2 flex items-center gap-3">
-        <h3 className="m-0 font-mono text-[11px] uppercase tracking-[0.08em] text-base-content/45">
-          {diet.length + exercise.length === 0
-            ? '还没记录'
-            : `今日 ${diet.length} 饮食 · ${exercise.length} 运动`}
-        </h3>
-      </div>
-      <ul className="m-0 max-h-[260px] list-none overflow-y-auto p-0 pr-1">
-        {[...diet, ...exercise].map(renderItem)}
-        {logs.length === 0 && (
-          <li className="py-4 text-center text-sm text-base-content/50">
-            上方记一笔今天的吃动,再点「生成今日汇总」
-          </li>
-        )}
-      </ul>
+      <div className="panel-scroll lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-1">
+        {/* 列表 */}
+        <div className="mb-2 flex items-center gap-3">
+          <h3 className="m-0 font-mono text-[11px] uppercase tracking-[0.08em] text-base-content/45">
+            {diet.length + exercise.length === 0
+              ? '还没记录'
+              : `今日 ${diet.length} 饮食 · ${exercise.length} 运动`}
+          </h3>
+        </div>
+        <ul className="m-0 max-h-[260px] list-none overflow-y-auto p-0 pr-1 lg:max-h-none lg:overflow-visible lg:p-0">
+          {[...diet, ...exercise].map(renderItem)}
+          {logs.length === 0 && (
+            <li className="py-4 text-center text-sm text-base-content/50">
+              上方记一笔今天的吃动,再点「生成今日汇总」
+            </li>
+          )}
+        </ul>
 
-      {/* AI 汇总 */}
-      <div className="mt-5 rounded-xl border border-base-300 bg-base-200/50 p-4">
-        {generating ? (
-          <div className="flex items-center gap-3 py-2 text-sm text-base-content/60">
-            <span className="loading loading-spinner loading-sm" />
-            AI 正在估算热量并结合档案点评…
-          </div>
-        ) : summary ? (
-          <>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
-              <div>
-                <div className="font-mono text-[11px] text-base-content/45">摄入</div>
-                <div className="font-display text-xl font-semibold tabular-nums text-warning">
-                  {summary.intakeKcal}
-                  <small className="ml-0.5 text-xs font-normal text-base-content/45">kcal</small>
-                </div>
-              </div>
-              <div>
-                <div className="font-mono text-[11px] text-base-content/45">总消耗</div>
-                <div className="font-display text-xl font-semibold tabular-nums text-accent">
-                  {summary.burnKcal}
-                  <small className="ml-0.5 text-xs font-normal text-base-content/45">kcal</small>
-                </div>
-                <div className="font-mono text-[10px] text-base-content/40">
-                  BMR {summary.bmr} · TDEE {summary.tdee} · 运动 {summary.exerciseKcal}
-                </div>
-              </div>
-              <div>
-                <div className="font-mono text-[11px] text-base-content/45">净差</div>
-                <div
-                  className={`font-display text-xl font-semibold tabular-nums ${
-                    netNegative ? 'text-success' : 'text-error'
-                  }`}
-                >
-                  {summary.netKcal > 0 ? '+' : ''}
-                  {summary.netKcal}
-                  <small className="ml-0.5 text-xs font-normal text-base-content/45">kcal</small>
-                </div>
-                <div className="font-mono text-[10px] text-base-content/40">
-                  {netNegative ? '亏空' : '盈余'} ≈ {(summary.weightDeltaKg * 7).toFixed(2)} kg/周
-                </div>
-              </div>
-              <div>
-                <div className="font-mono text-[11px] text-base-content/45">建议摄入</div>
-                <div className="font-display text-xl font-semibold tabular-nums">
-                  {summary.targetKcal}
-                  <small className="ml-0.5 text-xs font-normal text-base-content/45">kcal</small>
-                </div>
-              </div>
+        {/* AI 汇总 */}
+        <div className="mt-5 rounded-xl border border-base-300 bg-base-200/50 p-4">
+          {generating ? (
+            <div className="flex items-center gap-3 py-2 text-sm text-base-content/60">
+              <span className="loading loading-spinner loading-sm" />
+              AI 正在估算热量并结合档案点评…
             </div>
+          ) : summary ? (
+            <>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
+                <div>
+                  <div className="font-mono text-[11px] text-base-content/45">摄入</div>
+                  <div className="font-display text-xl font-semibold tabular-nums text-warning">
+                    {summary.intakeKcal}
+                    <small className="ml-0.5 text-xs font-normal text-base-content/45">kcal</small>
+                  </div>
+                </div>
+                <div>
+                  <div className="font-mono text-[11px] text-base-content/45">总消耗</div>
+                  <div className="font-display text-xl font-semibold tabular-nums text-accent">
+                    {summary.burnKcal}
+                    <small className="ml-0.5 text-xs font-normal text-base-content/45">kcal</small>
+                  </div>
+                  <div className="font-mono text-[10px] text-base-content/40">
+                    BMR {summary.bmr} · TDEE {summary.tdee} · 运动 {summary.exerciseKcal}
+                  </div>
+                </div>
+                <div>
+                  <div className="font-mono text-[11px] text-base-content/45">净差</div>
+                  <div
+                    className={`font-display text-xl font-semibold tabular-nums ${
+                      netNegative ? 'text-success' : 'text-error'
+                    }`}
+                  >
+                    {summary.netKcal > 0 ? '+' : ''}
+                    {summary.netKcal}
+                    <small className="ml-0.5 text-xs font-normal text-base-content/45">kcal</small>
+                  </div>
+                  <div className="font-mono text-[10px] text-base-content/40">
+                    {netNegative ? '亏空' : '盈余'} ≈ {(summary.weightDeltaKg * 7).toFixed(2)} kg/周
+                  </div>
+                </div>
+                <div>
+                  <div className="font-mono text-[11px] text-base-content/45">建议摄入</div>
+                  <div className="font-display text-xl font-semibold tabular-nums">
+                    {summary.targetKcal}
+                    <small className="ml-0.5 text-xs font-normal text-base-content/45">kcal</small>
+                  </div>
+                </div>
+              </div>
 
-            {summary.pendingCount > 0 && (
-              <p className="mb-0 mt-3 font-mono text-xs text-warning">
-                ⚠ {summary.pendingCount} 条未能估算热量,已按 0 计,可点击条目手动补填后重新生成
+              {summary.pendingCount > 0 && (
+                <p className="mb-0 mt-3 font-mono text-xs text-warning">
+                  ⚠ {summary.pendingCount} 条未能估算热量,已按 0 计,可点击条目手动补填后重新生成
+                </p>
+              )}
+
+              <p className="mb-0 mt-3 text-sm leading-relaxed whitespace-pre-line">
+                {summary.comment}
               </p>
-            )}
-
-            <p className="mb-0 mt-3 text-sm leading-relaxed whitespace-pre-line">
-              {summary.comment}
-            </p>
-            <div className="mt-3 flex items-center gap-2 border-t border-base-300 pt-2.5">
-              <span className="mr-auto font-mono text-[11px] text-base-content/40">
-                {summary.model} ·{' '}
-                {new Date(summary.generatedAt).toLocaleString('zh-CN', {
-                  month: 'numeric',
-                  day: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
-                {dateKey === todayKey() ? '' : ' · 历史日'}
-              </span>
-              <button type="button" className="btn btn-ghost btn-xs" onClick={() => void clearSummary()}>
-                清除
-              </button>
-              <button type="button" className="btn btn-outline btn-xs" onClick={() => void generate()}>
-                重新生成
+              <div className="mt-3 flex items-center gap-2 border-t border-base-300 pt-2.5">
+                <span className="mr-auto font-mono text-[11px] text-base-content/40">
+                  {summary.model} ·{' '}
+                  {new Date(summary.generatedAt).toLocaleString('zh-CN', {
+                    month: 'numeric',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                  {dateKey === todayKey() ? '' : ' · 历史日'}
+                </span>
+                <button type="button" className="btn btn-ghost btn-xs" onClick={() => void clearSummary()}>
+                  清除
+                </button>
+                <button type="button" className="btn btn-outline btn-xs" onClick={() => void generate()}>
+                  重新生成
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="m-0 flex-1 text-sm text-base-content/55">
+                记完后点右侧按钮:AI 会补齐未填的热量,并结合你的档案(基础代谢/日常消耗)给出今日收支点评。
+              </p>
+              <button type="button" className="btn btn-accent btn-sm" onClick={() => void generate()}>
+                ✨ 生成今日汇总
               </button>
             </div>
-          </>
-        ) : (
-          <div className="flex flex-wrap items-center gap-3">
-            <p className="m-0 flex-1 text-sm text-base-content/55">
-              记完后点右侧按钮:AI 会补齐未填的热量,并结合你的档案(基础代谢/日常消耗)给出今日收支点评。
-            </p>
-            <button type="button" className="btn btn-accent btn-sm" onClick={() => void generate()}>
-              ✨ 生成今日汇总
-            </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   )
