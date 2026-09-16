@@ -1,29 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Calendar } from './components/Calendar'
 import { DayView } from './components/DayView'
-import { ImportModal } from './components/ImportModal'
 import { LockScreen } from './components/LockScreen'
 import { ProfileModal } from './components/ProfileModal'
 import { AiConfigModal } from './components/AiConfigModal'
 import { WeightModal } from './components/WeightModal'
 import { Toasts, type ToastData } from './components/Toasts'
 import { WeightSparkline } from './components/WeightSparkline'
-import { useEvents } from './hooks/useEvents'
 import { useHealth } from './hooks/useHealth'
 import { useJournal } from './hooks/useJournal'
 import { useWeights } from './hooks/useWeights'
 import { api } from './utils/api'
 import { fmtKey, shiftKey, todayDate, todayKey } from './utils/date'
 import { avgWithin, recordStreak, weightSeries } from './utils/stats'
-import type { DotMark, LockStatus } from './types'
-
-interface ImportResult {
-  fetchedEvents: number
-  imported: number
-  duplicates: number
-  skippedRecurring: number
-  outOfWindow: number
-}
+import type { LockStatus } from './types'
 
 type LockPhase = 'checking' | 'setup' | 'locked' | 'ready'
 
@@ -56,12 +46,10 @@ function Workspace({ onLock }: { onLock: () => void }) {
   const now = todayDate()
   const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() })
   const [selectedKey, setSelectedKey] = useState<string>(() => todayKey())
-  const { store: eventStore, getDay: getEvents, removeEvent, reload: reloadEvents } = useEvents()
   const { getDay: getHealthDay, addLog, patchLog, removeLog, store: healthStore } = useHealth()
   const { getDay: getJournalDay, add: addJournal, patch: patchJournal, remove: removeJournal, store: journalStore } = useJournal()
   const { get: getWeight, setFor: setWeight, remove: removeWeight, store: weightStore } = useWeights()
 
-  const [importOpen, setImportOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const [aiConfigOpen, setAiConfigOpen] = useState(false)
   const [weightOpen, setWeightOpen] = useState(false)
@@ -77,15 +65,10 @@ function Workspace({ onLock }: { onLock: () => void }) {
     setTimeout(() => setToasts(ts => ts.filter(t => t.id !== id)), 4500)
   }, [])
 
-  // 快捷键:Ctrl/Cmd+I 呼出订阅导入;Esc 关闭所有弹窗
+  // Esc 关闭所有弹窗
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'i') {
-        e.preventDefault()
-        setImportOpen(true)
-      }
       if (e.key === 'Escape') {
-        setImportOpen(false)
         setProfileOpen(false)
         setAiConfigOpen(false)
         setWeightOpen(false)
@@ -94,32 +77,6 @@ function Workspace({ onLock }: { onLock: () => void }) {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
-
-  // 后台导入:弹窗立即收起,完成后 Toast 提示
-  const importIcs = useCallback(
-    async (url: string) => {
-      setImportOpen(false)
-      pushToast('success', `开始导入:${url}`)
-      try {
-        const res = await fetch('/api/ics/import', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url }),
-        })
-        const data = (await res.json()) as ImportResult & { error?: string }
-        if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`)
-
-        const parts = [`成功导入 ${data.imported} 条日程`]
-        if (data.duplicates) parts.push(`跳过重复 ${data.duplicates} 条`)
-        if (data.skippedRecurring) parts.push(`重复规则未展开 ${data.skippedRecurring} 条`)
-        pushToast('success', parts.join(' · '))
-        await reloadEvents()
-      } catch (err) {
-        pushToast('error', `导入失败:${err instanceof Error ? err.message : String(err)}`)
-      }
-    },
-    [pushToast, reloadEvents],
-  )
 
   const manualLock = useCallback(async () => {
     try {
@@ -131,19 +88,14 @@ function Workspace({ onLock }: { onLock: () => void }) {
     }
   }, [onLock, pushToast])
 
-  // 圆点标记:日程=蓝;记录=绿(打卡/流水/体重任一);同天可并存
-  const { marks, recordKeys } = useMemo(() => {
-    const m = new Map<string, DotMark[]>()
-    const recKeys = new Set<string>()
-    for (const [k, list] of Object.entries(eventStore)) {
-      if (list.some(t => t.source === 'ics')) m.set(k, [...(m.get(k) ?? []), 'event'])
-    }
-    for (const [k, list] of Object.entries(healthStore)) if (list.length) recKeys.add(k)
-    for (const [k, list] of Object.entries(journalStore)) if (list.length) recKeys.add(k)
-    for (const k of Object.keys(weightStore)) recKeys.add(k)
-    for (const k of recKeys) m.set(k, [...(m.get(k) ?? []), 'record'])
-    return { marks: m, recordKeys: recKeys }
-  }, [eventStore, healthStore, journalStore, weightStore])
+  // 有记录的日期集合(打卡/流水/体重任一)→ 月历绿点 + 本月概况 + 连续天数
+  const recordKeys = useMemo(() => {
+    const s = new Set<string>()
+    for (const [k, list] of Object.entries(healthStore)) if (list.length) s.add(k)
+    for (const [k, list] of Object.entries(journalStore)) if (list.length) s.add(k)
+    for (const k of Object.keys(weightStore)) s.add(k)
+    return s
+  }, [healthStore, journalStore, weightStore])
 
   const wSeries = useMemo(() => weightSeries(weightStore), [weightStore])
   const latestW = wSeries[wSeries.length - 1] ?? null
@@ -181,7 +133,7 @@ function Workspace({ onLock }: { onLock: () => void }) {
   }
 
   // 桌面端(lg 及以上)锁定为整屏工作台:顶栏不动,左右两栏各自内部滚动;
-  // 日历缩为左栏导航器,右栏是"一天所有记录"的日志主体。窄屏整页滚动。
+  // 左栏是日历导航 + 概览,右栏是"一天所有记录"的日志主体。窄屏整页滚动。
   return (
     <div className="flex min-h-dvh flex-col bg-base-200 lg:h-dvh lg:overflow-hidden">
       {/* 顶栏 */}
@@ -195,9 +147,6 @@ function Workspace({ onLock }: { onLock: () => void }) {
 
           <button type="button" className="btn btn-ghost btn-sm" onClick={goToday}>
             今天
-          </button>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setImportOpen(true)} title="快捷键 Ctrl+I">
-            订阅
           </button>
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => setProfileOpen(true)} title="健康档案(AI 汇总会结合身体情况)">
             档案
@@ -231,7 +180,7 @@ function Workspace({ onLock }: { onLock: () => void }) {
             year={ym.y}
             month={ym.m}
             selectedKey={selectedKey}
-            marks={marks}
+            recorded={recordKeys}
             onPick={setSelectedKey}
             onPrevMonth={prevMonth}
             onNextMonth={nextMonth}
@@ -287,8 +236,6 @@ function Workspace({ onLock }: { onLock: () => void }) {
 
         <DayView
           dateKey={selectedKey}
-          events={getEvents(selectedKey)}
-          onRemoveEvent={id => void removeEvent(selectedKey, id).catch(err => pushToast('error', String(err)))}
           journal={getJournalDay(selectedKey)}
           onJournalAdd={text => addJournal(selectedKey, text)}
           onJournalPatch={(id, text) => patchJournal(selectedKey, id, text)}
@@ -309,7 +256,6 @@ function Workspace({ onLock }: { onLock: () => void }) {
         />
       </main>
 
-      <ImportModal open={importOpen} onClose={() => setImportOpen(false)} onSubmit={url => void importIcs(url)} />
       <ProfileModal open={profileOpen} onClose={() => setProfileOpen(false)} notify={pushToast} />
       <AiConfigModal open={aiConfigOpen} onClose={() => setAiConfigOpen(false)} notify={pushToast} />
       <WeightModal

@@ -1,22 +1,16 @@
 import type { CalendarCell } from '../utils/date'
-import type { DotMark } from '../types'
 
 interface Props {
   cell: CalendarCell
   isToday: boolean
   isSelected: boolean
-  /** 当天标记:event=日程(蓝) record=有记录(绿) */
-  marks: readonly DotMark[]
+  /** 当天有任意记录(打卡/流水/体重)→ 绿点 */
+  hasRecord: boolean
   onClick: () => void
 }
 
-const DOT_COLOR: Record<DotMark, string> = {
-  event: 'bg-primary',
-  record: 'bg-success',
-}
-
-/** 迷你格子:数字 + 至多两个圆点,整体一行高,给密度让路 */
-export function DayCell({ cell, isToday, isSelected, marks, onClick }: Props) {
+/** 迷你格子:数字 + 至多一个圆点,整体一行高,给密度让路 */
+export function DayCell({ cell, isToday, isSelected, hasRecord, onClick }: Props) {
   const cls = [
     'flex h-8 cursor-pointer flex-col items-center justify-center gap-[2px] rounded-md',
     'font-mono text-[12px] tabular-nums transition-colors duration-150',
@@ -33,15 +27,8 @@ export function DayCell({ cell, isToday, isSelected, marks, onClick }: Props) {
   return (
     <button type="button" className={cls} onClick={onClick} aria-label={cell.key} title={cell.key}>
       <span>{cell.day}</span>
-      {marks.length > 0 && (
-        <span className="flex gap-[2px]">
-          {marks.map(m => (
-            <i
-              key={m}
-              className={`size-[3px] rounded-full ${isSelected ? 'bg-primary-content/90' : DOT_COLOR[m]}`}
-            />
-          ))}
-        </span>
+      {hasRecord && (
+        <i className={`size-[3px] rounded-full ${isSelected ? 'bg-primary-content/90' : 'bg-success'}`} />
       )}
     </button>
   )

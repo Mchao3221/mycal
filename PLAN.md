@@ -5,12 +5,13 @@
 
 ## 1. 项目目标
 
-- **迷你月历导航**:日历只负责"看哪天有东西 + 切日期",缩在左栏,不再占据主角;
+- **迷你月历导航**:日历只负责"看哪天有记录 + 切日期",缩在左栏,不再占据主角;
 - **一日一张卡**:流水(做了啥)/ 吃动打卡 / 体重 / AI 汇总在同一面板纵向铺开;
 - **数据存 Cloudflare D1(SQLite)**:本地与线上同一套迁移,换设备不丢;
 - **私有**:全站先过访问码锁,校验在服务端,可一键踢掉所有设备;
-- **ICS 订阅导入**:日程"能看见"即可,手动导入,不做重功能;
 - **轻量、快**:前端 + API 一体部署到 Workers,无独立服务器。
+
+> v0.4.1 起**日程功能整体退役**(ICS 订阅导入、`todos` 表、`worker/ics.ts` 全部移除),应用聚焦"每日健康日志 + AI 汇总"。
 
 ## 2. 功能范围
 
@@ -19,10 +20,9 @@
 | 锁 | 全屏锁屏(未解锁不渲染任何数据);首次打开设置访问码;PBKDF2 服务端校验 |
 | 锁 | 会话 7 天(不足 3 天滑动续期),最多 5 台设备;顶栏「上锁」清空全部会话真撤销 |
 | 锁 | 防爆破:连续失败 ≥5 次指数退避冷却(封顶 5 分钟);重置需 D1 手动删键 |
-| 日历 | **迷你月历导航器**(周一打头,数字+圆点,一行一格)+ 上/下月切换 + 回到今天 |
-| 日历 | 圆点标记:蓝 = 有日程,绿 = 当天有记录(打卡/流水/体重任一),可并存 |
+| 日历 | **迷你月历导航器**(周一打头,数字+绿点,一行一格)+ 上/下月切换 + 回到今天 |
+| 日历 | 圆点标记:绿 = 当天有记录(打卡/流水/体重任一) |
 | 左栏 | 本月概况(记录天数 / 条数 / 🔥连续记录)+ 体重走势卡(sparkline,点开曲线) |
-| 当日 | **日程细时间轴**(选中日,仅展示 + 可移除单条,不占 Tab) |
 | 当日 | **当日流水**:"今天做了哪些事"多条时间序,行内编辑/删除,≤500 字 |
 | 当日 | **今日体重**:一行式录入,一天一条同日覆盖,显示较 7 日均偏离 |
 | 当日 | **吃动打卡**:饮食(早/午/晚/加餐)与运动条目快记;热量手动填或留空待 AI 估 |
@@ -30,16 +30,13 @@
 | 体重 | 曲线弹窗:7 日均主线 + 原始点 + 目标线;90 天/1 年/全部;BMI 中国标准分段;按近期节奏估算达标周数;任意日期补录/删除 |
 | 健康档案 | 性别/年龄/身高/目标体重/活动量/目标方向;**当前体重以体重记录为单一事实源**(档案接口推导回填) |
 | AI 设置 | OpenAI 兼容服务(Base URL + API Key + 模型),顶栏弹窗;密钥只写不读 |
-| ICS 导入 | `Ctrl+I` 或顶栏「订阅」→ 粘贴链接 → 后台导入 → Toast 计数;去重 `(uid, date_key)` |
 | 主题 | Tailwind v4 + daisyUI 5;浅色 mycal + 深色 dim,顶栏切换(localStorage 记忆) |
 | 布局 | 桌面端一屏工作台:左栏 240px 导航/概览,右栏日志主体,各自内部滚动 |
 
 ### 已知边界
 
-- **待办已退役**(v0.4):不再有事前任务清单,`todos` 表只存 ICS 日程,旧手动待办数据已清空;
-- RRULE 重复规则**不展开**:跳过并计数;订阅**无定时同步**(定位:日程仅需可见,降级为不做);
-- Workers 无本机时区,ICS 时间统一按 **UTC 墙钟**处理 → **下一轮优先修正**(前端传本机时区/VTIMEZONE 换算);
-- 导入窗口为今天 ±365 天(UTC),单次最多 500 条,多日事件最多铺 30 天;
+- **日程与 ICS 订阅已整体退役**(v0.4.1):`todos` 表 DROP、`worker/ics.ts` 删除、日历蓝点移除;不再依赖 worker 侧 UTC 时区;
+- **待办早已退役**(v0.4):应用聚焦"事后记录"的健康日志,无事前任务清单;
 - 访问码强度≈数据安全性,防"偶然窥探"不防定向攻击;忘记只能 D1 手动重置;
 - 其他设备触发「上锁」时,当前已打开页面会开始报 401,刷新回锁屏即可。
 
@@ -50,17 +47,17 @@
 - **锁**:`worker/lock.ts`,纯 WebCrypto(PBKDF2 派生 + SHA-256 会话哈希),无第三方 auth 依赖;
 - **数据库**:**Cloudflare D1**;本地开发时 Vite 的 Cloudflare 插件在进程内跑 workerd + 本地 D1,`/api` 无需代理;
 - **表结构管理**:`migrations/*.sql` 迁移文件(见下节),**不再使用代码内建表**;
-- **ICS 解析**:`worker/ics.ts`(行折叠 / 全天 / UTC / TZID / 多日展开),纯标准 API,Workers 可用;
 - **体重图表**:`WeightModal` / `WeightSparkline` 手写 SVG(7 日均滑 + 原始点 + 目标线),不引图表库。
 
 ### 表结构管理(迁移体系)
 
 ```
 migrations/
-├── 0001_init.sql                  # todos 表 + date/uid 索引
-├── 0002_uid_date_unique.sql       # 去重唯一索引 (uid, date_key)
+├── 0001_init.sql                  # todos 表(v0.4.1 起 0005 已 DROP,弃用)
+├── 0002_uid_date_unique.sql       # ICS 去重索引(历史)
 ├── 0003_health_diary.sql          # 打卡 / 档案 / AI 汇总 / 设置
-└── 0004_journal_lock_weight.sql   # 流水 / 体重 / 会话 + 清退手动待办(幂等)
+├── 0004_journal_lock_weight.sql   # 流水 / 体重 / 会话 + 清退手动待办
+└── 0005_drop_schedule.sql         # 日程功能退役,DROP todos
 ```
 
 - **变更流程**:新建 `000N_描述.sql` → `pnpm db:migrate:local`(本地验证)→ 部署时 `deploy` 脚本自动先 `db:migrate:remote` 再 `wrangler deploy`;
@@ -70,16 +67,7 @@ migrations/
 ### 数据模型
 
 ```sql
-CREATE TABLE todos (
-  id         TEXT PRIMARY KEY,   -- uuid
-  date_key   TEXT    NOT NULL,   -- 'YYYY-MM-DD'
-  text       TEXT    NOT NULL,
-  done       INTEGER NOT NULL DEFAULT 0,
-  created_at INTEGER NOT NULL,
-  source     TEXT,               -- v0.4 起只会是 'ics'(手动待办已退役并清空)
-  uid        TEXT                -- ICS 事件 UID,用于去重
-);
-CREATE UNIQUE INDEX idx_todos_uid_date ON todos(uid, date_key); -- ICS 去重
+-- v0.4.1:todos 表已被 0005 DROP(手动待办与 ICS 日程双双退役),以下即当前全部结构
 
 -- 0003_health_diary.sql — 打卡日记 + 健康档案 + AI 汇总 + 应用设置
 CREATE TABLE health_logs (
@@ -140,9 +128,6 @@ CREATE TABLE auth_sessions (      -- 会话:只存 token 的 SHA-256,「上锁�
 | GET | 🔒免`/api/lock/status` | `{ isSet, unlocked }` |
 | POST | 🔒免`/api/lock/setup` · `/unlock` | 设置访问码(仅首次)/ 解锁;失败计数与冷却在此 |
 | POST | `/api/lock/lock` | 立即上锁:清空所有会话 + 过期 cookie |
-| GET | `/api/todos` | 日程全量:`{ "YYYY-MM-DD": Todo[] }`(仅 ics) |
-| DELETE | `/api/todos/:id` | 移除单条日程 → `{ ok }` |
-| POST | `/api/ics/import` | 导入:`{ url }` → `{ fetchedEvents, imported, duplicates, skippedRecurring, outOfWindow }` |
 | GET | `/api/journal` | 流水全量:`Record<date, JournalEntry[]>` |
 | POST | `/api/journal` | 添加:`{ dateKey, text }`(≤500 字)→ JournalEntry |
 | PATCH/DELETE | `/api/journal/:id` | 改文字 / 删除 |
@@ -170,25 +155,24 @@ mycal/
 │   ├── 0001_init.sql
 │   ├── 0002_uid_date_unique.sql
 │   ├── 0003_health_diary.sql   # 打卡/档案/AI 汇总/设置 4 张表
-│   └── 0004_journal_lock_weight.sql  # 流水/体重/会话 + 清退手动待办
+│   ├── 0004_journal_lock_weight.sql  # 流水/体重/会话 + 清退手动待办
+│   └── 0005_drop_schedule.sql  # 日程退役,DROP todos(ics.ts 一并删除)
 ├── worker/                     # ★ API 后端(跑在 Cloudflare Workers)
 │   ├── index.ts                # fetch 入口 + 鉴权门 + 路由(正则匹配,HttpError 统一转状态码)
 │   ├── lock.ts                 # 访问码:PBKDF2 / 可撤销会话 / 防爆破冷却
-│   ├── db.ts                   # D1 查询(日程/流水/打卡/体重/档案/汇总/设置/会话)
+│   ├── db.ts                   # D1 查询(流水/打卡/体重/档案/汇总/设置/会话)
 │   ├── ai.ts                   # AI 每日汇总(OpenAI 兼容调用 + BMR/TDEE 估算)
 │   ├── validate.ts             # dateKey/kcal/体重/档案入参校验
-│   ├── ics.ts                  # ICS 解析/展开
 │   ├── env.d.ts                # Env 绑定类型(D1 + AI_* 兜底变量)
-│   └── types.ts                # Todo / JournalEntry / HealthLog / WeightEntry / Profile / AiSummary
+│   └── types.ts                # JournalEntry / HealthLog / WeightEntry / Profile / AiSummary
 ├── src/                        # React 前端
 │   ├── main.tsx / App.tsx(锁门控 + 工作台)/ types.ts
 │   ├── utils/date.ts  utils/api.ts  utils/stats.ts   # 日期 / fetch / 均线·BMI·连续记录
-│   ├── hooks/useEvents.ts · useHealth.ts · useJournal.ts · useWeights.ts
+│   ├── hooks/useHealth.ts · useJournal.ts · useWeights.ts
 │   └── components/             # LockScreen / Calendar / DayCell / DayView / JournalPanel /
 │                               # DiaryPanel / WeightToday / WeightSparkline / WeightModal /
-│                               # ImportModal / ProfileModal / AiConfigModal / Toasts
+│                               # ProfileModal / AiConfigModal / Toasts
 └── docs/
-    ├── sample.ics              # ICS 导入本地测试样例
     └── sql/                    # 需在 Cloudflare 网页 D1 Console 执行的脚本(由用户执行)
 ```
 
@@ -196,14 +180,13 @@ mycal/
 
 1. **打开应用 → 全屏锁屏**(未设置过则是"设置访问码"页);解锁后才挂载工作台、拉取数据,未解锁时前端不渲染任何数据界面;
 2. 解锁进入 → 默认当月、选中今天;左栏迷你月历点任意日期 → 右栏日志主体即切换到该天;
-3. **右栏一天一张卡,自上而下**:日期标题 → 日程细时间轴(有则显示,可 ✕ 移除误导入)→ 当日流水(输入框回车即记,行内 ✎ 改 ✕ 删)→ 今日体重(同日覆盖,显示较 7 日均)→ 吃动打卡 + AI 汇总;
+3. **右栏一天一张卡,自上而下**:日期标题 → 当日流水(输入框回车即记,行内 ✎ 改 ✕ 删)→ 今日体重(同日覆盖,显示较 7 日均)→ 吃动打卡 + AI 汇总;
 4. **左栏下方两块**:本月概况(记录天数 / 条数 / 🔥连续,跟随所看月份)、体重走势卡(sparkline + 最新值,点击开曲线弹窗:90 天/1 年/全部切换、补录/删除、BMI 中国标准、达标周数估算);
-5. **Ctrl+I(或顶栏「订阅」)→ 弹窗粘贴 .ics 链接 → 导入** → 弹窗立即关闭,后台拉取解析,完成后 Toast 提示;
-6. **打卡日记**:切饮食/运动,记「一碗牛肉面」即可;热量可留空由 AI 估;点条目上的 kcal 可手动修正(AI 不再覆盖)或清空回「待估」;
-7. **AI 汇总**:先「档案」+「AI」配好 → 点「生成今日汇总」→ AI 估热量,并结合当日流水与体重给点评;当天没有任何吃动但有流水也能生成;结果按天缓存,可清除重生成;
-8. 顶栏「🔒 上锁」:清空所有设备会话(含本机),回到锁屏——借电脑后的救命按钮;
-9. 日历圆点:蓝 = 有日程,绿 = 当天有记录(打卡/流水/体重任一),可并存;选中日圆点变白;
-10. 顶栏月亮/太阳按钮切换深浅色主题(记忆在 localStorage)。
+5. **打卡日记**:切饮食/运动,记「一碗牛肉面」即可;热量可留空由 AI 估;点条目上的 kcal 可手动修正(AI 不再覆盖)或清空回「待估」;
+6. **AI 汇总**:先「档案」+「AI」配好 → 点「生成今日汇总」→ AI 估热量,并结合当日流水与体重给点评;当天没有任何吃动但有流水也能生成;结果按天缓存,可清除重生成;
+7. 顶栏「🔒 上锁」:清空所有设备会话(含本机),回到锁屏——借电脑后的救命按钮;
+8. 日历圆点:绿 = 当天有记录(打卡/流水/体重任一);选中日圆点变白;
+9. 顶栏月亮/太阳按钮切换深浅色主题(记忆在 localStorage)。
 
 ## 6. 启动与部署
 
@@ -229,8 +212,6 @@ pnpm run preview
 | `pnpm db:migrate:remote` | 应用到远端生产 D1(deploy 已内置) |
 | `npx wrangler d1 migrations list mycal_db --remote` | 查看远端未应用的迁移(部署前体检) |
 
-试试导入:把 `docs/sample.ics` 用任意静态服务暴露后粘贴链接(或直接用真实订阅 URL)。
-
 **部署分工(用户约定)**:开发侧只把代码推到 GitHub,Cloudflare 经 GitHub 集成自动构建部署;**远程 D1 的一切改动**(应用迁移、数据修正)由用户在网页 D1 Console 执行,执行脚本存档于 `docs/sql/`。`pnpm run deploy` 仅由 Cloudflare CI 或用户本人使用。
 
 ## 7. 里程碑
@@ -240,5 +221,6 @@ pnpm run preview
 3. ✅ v0.3:**迁移到 Cloudflare Workers + D1**:Express 退役,API 重写为 Worker;表结构改为迁移文件管理(含去重唯一索引);本地 dev 由 Cloudflare Vite 插件内嵌 workerd;deploy 前置远端迁移;清理原型页/草图生成器等历史产物
 4. ✅ v0.3.1:**打卡日记 + AI 每日汇总**:饮食/运动条目、热量三态(手动/AI/待估)、健康档案(BMR/TDEE)、OpenAI 兼容汇总按天缓存;日历第三圆点(绿)
 5. ✅ v0.4:**定位转型「私人 AI 健康日志」**:访问码锁(服务端 PBKDF2 / 可撤销会话 / 防爆破 / 一键上锁);布局重构(迷你月历侧栏 + 当日日志主体,解决信息密度);待办退役 → **当日流水**(day_logs,旧数据清空);体重记录 + 7 日均曲线 + BMI(中国标准)+ 达标预估,体重成为档案/AI 的单一事实源;AI 汇总扩料(流水 + 有效体重)
-6. ⬜ 下一轮候选:**ICS 时区修正**(VTIMEZONE/TZID 换算,消除 UTC 墙钟差一天,优先级最高)、自然语言快记拆条、AI 周报/月报、导出 JSON 备份、AI 流式输出
-7. 🚫 明确不做(除非需求变化):RRULE 展开、订阅定时同步、多用户/账号体系、待办系统
+6. ✅ v0.4.1:**日程功能整体退役**:删除 ICS 订阅导入 / `worker/ics.ts` / `todos` 表 / 日历蓝点 / 右栏日程卡;不再依赖 worker 侧 UTC 时区,同时消除切换日期时的布局跳动
+7. ⬜ 下一轮候选:自然语言快记拆条、AI 周报/月报、导出 JSON 备份、AI 流式输出
+8. 🚫 明确不做(除非需求变化):多用户/账号体系、待办系统

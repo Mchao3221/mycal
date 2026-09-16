@@ -12,76 +12,12 @@ import type {
   Profile,
   ProfileRow,
   SessionRow,
-  Todo,
-  TodoRow,
-  TodoStore,
   WeightEntry,
   WeightRow,
   WeightStore,
 } from './types'
 
 type DB = Env['mycalDB']
-
-function toTodo(r: TodoRow): Todo {
-  const t: Todo = { id: r.id, text: r.text, done: !!r.done, createdAt: r.created_at }
-  if (r.source) t.source = r.source as Todo['source']
-  if (r.uid) t.uid = r.uid
-  return t
-}
-
-/** 全量读取(v0.4 起仅剩 ICS 日程):Record<'YYYY-MM-DD', Todo[]> */
-export async function getAllTodos(db: Env['mycalDB']): Promise<TodoStore> {
-  const res = await db
-    .prepare('SELECT * FROM todos ORDER BY created_at ASC, rowid ASC')
-    .all<TodoRow>()
-  const store: TodoStore = {}
-  for (const r of res.results) {
-    ;(store[r.date_key] ??= []).push(toTodo(r))
-  }
-  return store
-}
-
-/** 按 id 删除日程(纠错用);v0.4 起待办的新增/切换已退役 */
-export async function deleteTodoById(db: Env['mycalDB'], id: string): Promise<boolean> {
-  const res = await db.prepare('DELETE FROM todos WHERE id = ?').bind(id).run()
-  return (res.meta.changes ?? 0) > 0
-}
-
-export interface SeedItem {
-  uid: string
-  dateKey: string
-  text: string
-}
-
-/**
- * 批量插入 ICS 条目:依赖 0002 迁移的唯一索引(uid, date_key),
- * INSERT OR IGNORE 撞唯一键时 changes=0,据此统计 imported / duplicates。
- * D1 批量按 50 条分块,规避单次批量上限。
- */
-export async function insertIcsTodos(
-  db: Env['mycalDB'],
-  items: SeedItem[],
-): Promise<{ imported: number; duplicates: number }> {
-  const stmt = db.prepare(
-    'INSERT OR IGNORE INTO todos (id, date_key, text, done, created_at, source, uid) VALUES (?, ?, ?, 0, ?, ?, ?)',
-  )
-  const base = Date.now()
-  let imported = 0
-
-  for (let chunkStart = 0; chunkStart < items.length; chunkStart += 50) {
-    const chunk = items.slice(chunkStart, chunkStart + 50)
-    const results = await db.batch(
-      chunk.map((it, i) =>
-        stmt.bind(crypto.randomUUID(), it.dateKey, it.text, base + chunkStart + i, 'ics', it.uid),
-      ),
-    )
-    for (const r of results) {
-      if ((r.meta.changes ?? 0) > 0) imported++
-    }
-  }
-
-  return { imported, duplicates: items.length - imported }
-}
 
 // ---------- 打卡日记 ----------
 

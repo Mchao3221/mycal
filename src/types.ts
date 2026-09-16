@@ -1,19 +1,4 @@
-export interface Todo {
-  id: string
-  text: string
-  done: boolean
-  createdAt: number
-  /** 由 .ics 订阅导入的日程(v0.4 起 todos 只承载日程) */
-  source?: 'ics'
-  /** ICS 事件 UID,用于重复导入去重 */
-  uid?: string
-}
-
-/** 后端返回的存储结构:日期 key(YYYY-MM-DD) -> 当天条目 */
-export type TodoStore = Record<string, Todo[]>
-
-/** 日历圆点:event = 有 ICS 日程(蓝),record = 当天有记录(打卡/流水/体重,绿) */
-export type DotMark = 'event' | 'record'
+// 注:v0.4.1 起日程功能(todos/ICS)已整体移除。
 
 // ---------- 访问码锁 ----------
 

@@ -1,15 +1,14 @@
 import { useMemo } from 'react'
 import { DayCell } from './DayCell'
 import { WEEKDAYS, monthMatrix, todayKey } from '../utils/date'
-import type { DotMark } from '../types'
 
 interface Props {
   year: number
   /** 0 起始月份 */
   month: number
   selectedKey: string
-  /** 各日期标记(用于圆点着色) */
-  marks: ReadonlyMap<string, DotMark[]>
+  /** 当天有任意记录(打卡/流水/体重)的日期集合(绿点) */
+  recorded: ReadonlySet<string>
   onPick: (key: string) => void
   onPrevMonth: () => void
   onNextMonth: () => void
@@ -17,14 +16,14 @@ interface Props {
 }
 
 /**
- * 迷你月历导航器(v0.4):只负责"看哪天有东西 + 切日期",
- * 日程明细移到右侧日志区顶部,日历整体缩到左栏 ~236px。
+ * 迷你月历导航器(v0.4):只负责"看哪天有记录 + 切日期",
+ * 日历整体缩到左栏 ~236px;v0.4.1 起日程移除,圆点只剩"有记录"一色。
  */
 export function Calendar({
   year,
   month,
   selectedKey,
-  marks,
+  recorded,
   onPick,
   onPrevMonth,
   onNextMonth,
@@ -64,22 +63,16 @@ export function Calendar({
             cell={c}
             isToday={c.key === todayK}
             isSelected={c.key === selectedKey}
-            marks={marks.get(c.key) ?? []}
+            hasRecord={recorded.has(c.key)}
             onClick={() => onPick(c.key)}
           />
         ))}
       </div>
 
       <div className="mt-2.5 flex items-center justify-between gap-3 border-t border-base-300 pt-2.5 font-mono text-[10px] tracking-wide text-base-content/45">
-        <span className="inline-flex items-center gap-2">
-          <span className="inline-flex items-center gap-1">
-            <i className="inline-block size-[5px] rounded-full bg-primary" />
-            日程
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <i className="inline-block size-[5px] rounded-full bg-success" />
-            记录
-          </span>
+        <span className="inline-flex items-center gap-1">
+          <i className="inline-block size-[5px] rounded-full bg-success" />
+          有记录
         </span>
         <button type="button" className="btn btn-ghost btn-xs px-1.5 normal-case" onClick={onToday}>
           今天

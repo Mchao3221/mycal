@@ -1,4 +1,4 @@
-import type { HealthLog, HealthLogInput, JournalEntry, Todo, WeightEntry } from '../types'
+import type { HealthLog, HealthLogInput, JournalEntry, WeightEntry } from '../types'
 import { DiaryPanel } from './DiaryPanel'
 import { JournalPanel } from './JournalPanel'
 import { WeightToday } from './WeightToday'
@@ -7,9 +7,6 @@ import type { WeightPoint } from '../utils/stats'
 
 interface Props {
   dateKey: string
-  /** 当天 ICS 日程 */
-  events: Todo[]
-  onRemoveEvent: (id: string) => void
   journal: JournalEntry[]
   onJournalAdd: (text: string) => Promise<void>
   onJournalPatch: (id: string, text: string) => Promise<void>
@@ -28,8 +25,6 @@ interface Props {
 /** 右栏主体:一天的所有记录(流水 → 体重 → 吃动打卡 + AI 汇总)在同一张卡里纵向铺开 */
 export function DayView({
   dateKey,
-  events,
-  onRemoveEvent,
   journal,
   onJournalAdd,
   onJournalPatch,
@@ -70,38 +65,6 @@ export function DayView({
           </span>
           {isToday && <span className="badge badge-primary badge-sm">今天</span>}
         </header>
-
-        {/* 日程:常驻卡片(无日程显示占位行),避免切换日期时整块出现/消失导致布局跳动 */}
-        <div className="mb-5 rounded-xl border border-base-300 bg-base-200/40 px-4 py-2.5">
-          <h3 className="mb-1 font-mono text-[11px] uppercase tracking-[0.08em] text-base-content/45">
-            日程 · {events.length}
-          </h3>
-          {events.length > 0 ? (
-            <ul className="m-0 list-none p-0">
-              {events.map(t => {
-                const mt = t.text.match(/^(\d{2}:\d{2})\s+(.*)$/)
-                return (
-                  <li key={t.id} className="grid grid-cols-[52px_1fr_auto] items-center gap-2 border-b border-base-300/60 py-1.5 text-sm last:border-b-0">
-                    <span className="font-mono text-xs tabular-nums text-primary">{mt ? mt[1] : '全天'}</span>
-                    <span className="min-w-0 truncate" title={t.text}>
-                      {mt ? mt[2] : t.text}
-                    </span>
-                    <button
-                      type="button"
-                      className="text-xs text-base-content/30 transition-colors hover:text-secondary"
-                      onClick={() => onRemoveEvent(t.id)}
-                      aria-label={`移除日程:${t.text}`}
-                    >
-                      ✕
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
-          ) : (
-            <div className="py-1.5 text-sm text-base-content/35">该日暂无日程</div>
-          )}
-        </div>
 
         {/* 当日流水 */}
         <JournalPanel

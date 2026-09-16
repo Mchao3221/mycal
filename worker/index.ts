@@ -1,7 +1,4 @@
 import {
-  getAllTodos,
-  deleteTodoById,
-  insertIcsTodos,
   getAllHealthLogs,
   createHealthLog,
   patchHealthLog,
@@ -21,7 +18,6 @@ import {
   setSetting,
   deleteSetting,
 } from './db'
-import { parseIcs, expandEvents } from './ics'
 import { HttpError, resolveAiConfig, summarizeDay } from './ai'
 import { clearSessionCookie, lockNow, normPassword, setupLock, unlockLock, verifySession } from './lock'
 import { isValidDateKey, normKcal, normWeight, normProfile, HEALTH_KINDS, MEALS } from './validate'
@@ -111,47 +107,6 @@ async function route(req: Request, env: Env, path: string, method: string): Prom
       status: 200,
       headers: { 'Content-Type': 'application/json; charset=utf-8', 'Set-Cookie': clearSessionCookie(secure) },
     })
-  }
-
-  // ---- 日程(todos 表 v0.4 起只服务 ICS;新增/切换已退役) ----
-  if (path === '/api/todos' && method === 'GET') {
-    return json(await getAllTodos(db))
-  }
-
-  const todoMatch = path.match(/^\/api\/todos\/([^/]+)$/)
-  if (todoMatch && method === 'DELETE') {
-    const ok = await deleteTodoById(db, todoMatch[1])
-    if (!ok) throw new HttpError(404, '日程不存在')
-    return json({ ok: true })
-  }
-
-  // ---- ICS 订阅导入 ----
-  if (path === '/api/ics/import' && method === 'POST') {
-    const body = await readBody<{ url?: string }>(req)
-    const target = String(body?.url ?? '').trim()
-    if (!/^https?:\/\//i.test(target)) {
-      throw new HttpError(400, '请提供 http(s) 的 .ics 链接')
-    }
-    let resp: Response
-    try {
-      resp = await fetch(target, {
-        headers: { 'User-Agent': 'MyCal/0.4 (+cloudflare-workers)' },
-        redirect: 'follow',
-        signal: AbortSignal.timeout(15_000),
-      })
-    } catch (err) {
-      throw new HttpError(502, `导入失败:${err instanceof Error ? err.message : String(err)}`)
-    }
-    if (!resp.ok) throw new HttpError(502, `拉取失败:HTTP ${resp.status}`)
-
-    const events = parseIcs(await resp.text())
-    const now = new Date()
-    const fromMs = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 365)
-    const toMs = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 365)
-    const { items, skippedRecurring, outOfWindow } = expandEvents(events, { fromMs, toMs })
-
-    const { imported, duplicates } = await insertIcsTodos(db, items)
-    return json({ fetchedEvents: events.length, imported, duplicates, skippedRecurring, outOfWindow })
   }
 
   // ---- 当日流水 ----
