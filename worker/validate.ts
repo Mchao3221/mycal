@@ -27,11 +27,20 @@ export function normKcal(v: unknown): number | null | undefined {
   return k >= 1 && k <= 20000 ? k : undefined
 }
 
+/** 体重归一:保留 0.1 kg;非法→undefined(调用方据此报 400) */
+export function normWeight(v: unknown): number | undefined {
+  const n = Number(v)
+  if (!Number.isFinite(n)) return undefined
+  const w = Math.round(n * 10) / 10
+  return w >= 20 && w <= 400 ? w : undefined
+}
+
 export interface ProfilePayload {
   sex: 'male' | 'female'
   age: number
   heightCm: number
-  weightKg: number
+  /** v0.4 起当前体重以体重记录为单一事实源,档案可为空 */
+  weightKg: number | null
   targetWeightKg: number | null
   activity: ActivityLevel
   goal: Goal
@@ -49,8 +58,8 @@ export function normProfile(body: Record<string, unknown>): { p?: ProfilePayload
   if (!(Number.isFinite(age) && (age as number) >= 10 && (age as number) <= 120)) return { error: '年龄需为 10~120' }
   if (!(Number.isFinite(heightCm) && (heightCm as number) >= 80 && (heightCm as number) <= 250))
     return { error: '身高需为 80~250 cm' }
-  if (!(Number.isFinite(weightKg) && (weightKg as number) >= 20 && (weightKg as number) <= 400))
-    return { error: '体重需为 20~400 kg' }
+  if (weightKg !== null && !((weightKg as number) >= 20 && (weightKg as number) <= 400))
+    return { error: '体重需为 20~400 kg 或留空' }
   if (targetWeightKg !== null && !((targetWeightKg as number) >= 20 && (targetWeightKg as number) <= 400))
     return { error: '目标体重需为 20~400 kg 或留空' }
   return {
@@ -58,7 +67,7 @@ export function normProfile(body: Record<string, unknown>): { p?: ProfilePayload
       sex: b.sex as 'male' | 'female',
       age: age as number,
       heightCm: heightCm as number,
-      weightKg: weightKg as number,
+      weightKg,
       targetWeightKg,
       activity: (ACTIVITIES.has(String(b.activity)) ? String(b.activity) : 'light') as ActivityLevel,
       goal: (GOALS.has(String(b.goal)) ? String(b.goal) : 'maintain') as Goal,

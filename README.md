@@ -1,14 +1,15 @@
-# MyCal — 日常工作台
+# MyCal — 私人 AI 健康日志
 
-一个「日历 + 每日待办」的 Web 应用:看月历,点哪天,就管哪天的事。
+一个「日历导航 + 每日日志 + AI 汇总」的私有 Web 应用:点哪天,看哪天、记哪天;吃动、流水、体重一张卡,晚上让 AI 帮你看一天。
 
-- 📅 **月历视图**:按月展示、上/下月切换、一键回到今天,「今天」与选中日高亮;
-- ✅ **待办 / 打卡双 Tab,日程在月历下方**:待办可添加(回车/按钮)、勾选完成、删除;选中日的 ICS 日程以时间轴显示在月历下方(可移除单条);打卡 Tab 记每日饮食与运动;
-- 🔵🟡🟢 **圆点标记**:蓝 = 有日程,琥珀 = 有待办,绿 = 有打卡,可并存;
-- 🍽 **打卡日记 + AI 汇总**:记录每日吃动,一键让 AI(OpenAI 兼容)估算热量并结合健康档案(BMR/TDEE)给出今日摄入/消耗收支点评;
-- 📥 **ICS 订阅导入**:`Ctrl+I` 或顶栏「订阅」呼出弹窗,粘贴订阅链接即可把日程按日期铺进日历,重复导入零副作用(同 UID 同一天只入库一次);
+- 🔒 **访问码锁**:打开先过全屏锁屏,校验全在服务端(PBKDF2 + 可撤销会话);记住 7 天,顶栏「上锁」一键踢掉所有设备,忘记密码可到 D1 手动重置;
+- 📅 **迷你月历导航**:日历缩为左栏导航器(数字+圆点),只负责看哪天有东西、切日期;
+- 📝 **当日流水**:记录"今天做了哪些事"(事后视角,不是待办),多条时间序、行内改删,AI 汇总一起消化;
+- 🍽 **吃动打卡 + AI 每日汇总**:饮食/运动条目热量可留空,AI(OpenAI 兼容)补齐并结合档案 BMR/TDEE 与当日流水、体重给出收支点评;
+- ⚖️ **体重曲线 + BMI**:一天一条晨起空腹,7 日均平滑曲线 + 目标线,BMI 按中国标准分段,按近期节奏估算达标周数;
+- 📥 **ICS 订阅导入**:`Ctrl+I` 粘贴订阅链接,日程按日期铺进日历(仅作展示),重复导入零副作用;
 - ☁️ **Cloudflare Workers + D1**:前端与 API 一体部署,数据存 D1(SQLite),表结构由迁移文件管理;
-- 🌗 **深浅色主题**:Tailwind v4 + daisyUI 5,自定义浅色主题 + dim 深色,一键切换(记忆在 localStorage)。
+- 🌗 **深浅色主题**:Tailwind v4 + daisyUI 5,一键切换(记忆在 localStorage)。
 
 ## 技术栈
 
@@ -36,7 +37,7 @@ pnpm db:migrate:local
 
 # 2) 开发:Vite 内嵌运行 worker,/api 与页面同源
 pnpm run dev
-# 打开 http://localhost:5173
+# 打开 http://localhost:5173 —— 首次会进入"设置访问码"流程,之后每次都要先解锁
 ```
 
 ## 表结构管理(重要)
@@ -86,23 +87,31 @@ pnpm run deploy
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/api/todos` | 全量获取:`{ "YYYY-MM-DD": Todo[] }` |
-| POST | `/api/todos` | 添加:`{ dateKey, text }` → Todo |
-| POST | `/api/todos/:id/toggle` | 切换完成态 → Todo |
-| DELETE | `/api/todos/:id` | 删除 → `{ ok }` |
+| GET | `/api/lock/status` | `{ isSet, unlocked }`(唯一免鉴权的读接口) |
+| POST | `/api/lock/setup` · `/unlock` · `/lock` | 设置访问码(仅一次)/ 解锁 / 立即上锁(清空所有会话) |
+| GET | `/api/todos` | 日程全量:`{ "YYYY-MM-DD": Todo[] }`(v0.4 起仅 ICS 日程) |
+| DELETE | `/api/todos/:id` | 移除单条日程 → `{ ok }` |
 | POST | `/api/ics/import` | 导入:`{ url }` → `{ fetchedEvents, imported, duplicates, skippedRecurring, outOfWindow }` |
-| GET/POST/PATCH/DELETE | `/api/health` · `/api/health/:id` | 打卡日记条目 CRUD(全量 `Record<date, HealthLog[]>`) |
-| GET/PUT | `/api/profile` | 健康档案(AI 汇总据此算 BMR/TDEE) |
+| GET | `/api/journal` | 流水全量:`Record<date, JournalEntry[]>` |
+| POST/PATCH/DELETE | `/api/journal` · `/api/journal/:id` | 流水增(≤500 字)改删 |
+| GET | `/api/health` | 打卡全量:`Record<date, HealthLog[]>` |
+| POST/PATCH/DELETE | `/api/health` · `/api/health/:id` | 打卡条目 CRUD |
+| GET/POST/DELETE | `/api/weights` · `/api/weights/:dateKey` | 体重:全量 / 按日期 upsert / 删除 |
+| GET/PUT | `/api/profile` | 健康档案;`GET` 的当前体重由最新体重记录推导 |
 | GET/PUT | `/api/ai/config` | AI 服务配置 `{ baseUrl, model, hasKey }`(密钥只写不读) |
 | GET/POST/DELETE | `/api/ai/summary/:dateKey` · `/api/ai/summary` | AI 每日汇总:读取 / 生成 / 清除 |
 
-## 打卡日记与 AI 汇总
+> 🔒 除 `lock/status|setup|unlock` 外,所有 `/api/*` 都要求有效会话 Cookie,否则 401;连续输错访问码 5 次起进入指数退避冷却。
 
-1. 顶栏「档案」填性别/年龄/身高/体重(等),「AI」配置任一 OpenAI 兼容服务的 Base URL + API Key + 模型;
-2. 在「打卡」Tab 记饮食/运动条目,热量可留空;
-3. 点「生成今日汇总」→ AI 逐条估算缺失热量(不覆盖手动值)并结合基础代谢给出摄入/消耗/净差与点评;结果按天缓存,可清除重生成。
+## 每日日志与 AI 汇总
 
-密钥可存 `settings` 表(经 UI),也可用环境变量兜底:`AI_BASE_URL` / `AI_API_KEY` / `AI_MODEL`(生产建议 `wrangler secret put AI_API_KEY`)。
+1. 首次打开设置**访问码**(全屏锁),之后 7 天内免输,顶栏可随时「上锁」踢掉所有设备;
+2. 顶栏「档案」填性别/年龄/身高/目标(当前体重以体重记录为准),「AI」配置任一 OpenAI 兼容服务的 Base URL + API Key + 模型;
+3. 右栏自上而下记一天:**当日流水**(做了哪些事)→ **今日体重**(晨起空腹,一天一条)→ **饮食/运动条目**(热量可留空);
+4. 点「生成今日汇总」→ AI 逐条估算缺失热量(不覆盖手动值),结合 BMR/TDEE、当日流水与体重(含近 7 日均值)给出摄入/消耗/净差与点评;结果按天缓存,可清除重生成;
+5. 左栏「体重走势」点开曲线:7 日均主线 + 目标线 + BMI(中国标准分段)+ 按近期节奏估算达标周数,支持任意日期补录。
+
+密钥可存 `settings` 表(经 UI),也可用环境变量兜底:`AI_BASE_URL` / `AI_API_KEY` / `AI_MODEL`(生产建议 `wrangler secret put AI_API_KEY`)。忘记访问码:在 D1 Console 执行 [`docs/sql/解锁码重置.sql`](docs/sql/解锁码重置.sql)。
 
 ## 项目结构
 
@@ -113,21 +122,25 @@ mycal/
 ├── migrations/                   # ★ 表结构唯一事实源
 │   ├── 0001_init.sql             # todos 表 + 索引
 │   ├── 0002_uid_date_unique.sql  # ICS 去重唯一索引
-│   └── 0003_health_diary.sql     # 打卡 / 档案 / AI 汇总 / 设置 4 张表
+│   ├── 0003_health_diary.sql     # 打卡 / 档案 / AI 汇总 / 设置 4 张表
+│   └── 0004_journal_lock_weight.sql  # 流水 / 体重 / 会话 + 清退手动待办
 ├── worker/                       # ★ API 后端(跑在 Cloudflare Workers)
-│   ├── index.ts                  # fetch 入口 + 路由(正则匹配)
-│   ├── db.ts                     # D1 查询(待办/打卡/档案/汇总/设置)
+│   ├── index.ts                  # fetch 入口 + 路由 + 鉴权门(未解锁一律 401)
+│   ├── lock.ts                   # 访问码 PBKDF2 校验 / 可撤销会话 / 防爆破冷却
+│   ├── db.ts                     # D1 查询(日程/流水/打卡/体重/档案/汇总/设置/会话)
 │   ├── ai.ts                     # AI 每日汇总(OpenAI 兼容 + BMR/TDEE 估算)
-│   ├── validate.ts               # dateKey/kcal/档案入参校验
+│   ├── validate.ts               # dateKey/kcal/体重/档案入参校验
 │   ├── ics.ts                    # ICS 解析/展开
 │   ├── env.d.ts                  # Env 绑定类型(D1 + AI_* 变量)
-│   └── types.ts                  # Todo / HealthLog / Profile / AiSummary …
+│   └── types.ts                  # Todo / JournalEntry / HealthLog / WeightEntry / Profile …
 ├── src/                          # React 前端
-│   ├── main.tsx / App.tsx / types.ts
-│   ├── utils/date.ts / utils/api.ts
-│   ├── hooks/useTodos.ts / hooks/useHealth.ts
-│   └── components/               # Calendar / DayCell / DayPanel / DiaryPanel /
-│                                 # ImportModal / ProfileModal / AiConfigModal / Toasts
+│   ├── main.tsx / App.tsx(锁门控 + 工作台)/ types.ts
+│   ├── utils/date.ts / utils/api.ts / utils/stats.ts
+│   ├── hooks/useEvents.ts · useHealth.ts · useJournal.ts · useWeights.ts
+│   └── components/               # LockScreen / Calendar / DayCell / DayView /
+│                                 # JournalPanel / DiaryPanel / WeightToday /
+│                                 # WeightSparkline / WeightModal / ImportModal /
+│                                 # ProfileModal / AiConfigModal / Toasts
 └── docs/
     ├── sample.ics                # ICS 导入本地测试样例
     └── sql/                      # 需在 Cloudflare 网页 D1 Console 执行的脚本
@@ -139,6 +152,7 @@ mycal/
 - ✅ v0.2:SQLite 持久化 + REST API;ICS 订阅导入;待办/日程双 Tab;Tailwind + daisyUI 重构
 - ✅ v0.3:迁移到 Cloudflare Workers + D1;表结构改为迁移文件管理;deploy 前置远端迁移;清理原型页与草图生成器
 - ✅ v0.3.1:打卡日记(饮食/运动 + 热量)+ 健康档案 + AI 每日汇总(OpenAI 兼容);日历第三圆点(绿)
-- ⬜ v2 候选:订阅定时自动同步(Cron Triggers)、RRULE 展开、待办文字编辑、优先级、导出 JSON 备份;打卡体重曲线、AI 流式输出
+- ✅ v0.4:**定位转型「私人 AI 健康日志」**:访问码锁(服务端校验/可撤销会话/防爆破);迷你月历侧栏 + 当日日志主体;待办退役为**当日流水**(day_logs);体重记录 + 7 日均曲线 + BMI(中国标准)+ 达标预估;AI 汇总扩料(流水 + 有效体重)
+- ⬜ 下一轮候选:ICS **时区修正**(按 VTIMEZONE/TZID 换算,消除 UTC 墙钟差一天)、自然语言快记拆条、AI 周报/月报、数据导出 JSON 备份、AI 流式输出;~~RRULE 展开 / 订阅定时同步~~(降级:日程仅需可见,手动 Ctrl+I 足够)
 
 更完整的规划与交互设计见 [`PLAN.md`](PLAN.md)。

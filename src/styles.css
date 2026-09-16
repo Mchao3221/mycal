@@ -95,20 +95,6 @@
 }
 
 @layer components {
-  /* 待办 / 日程 分段切换 */
-  .seg-btn {
-    @apply flex items-center justify-center gap-2 rounded-[0.55rem] py-2 text-sm font-medium text-base-content/55 transition-colors duration-150;
-  }
-  .seg-btn.active {
-    @apply bg-base-100 text-base-content shadow-xs;
-  }
-  .seg-cnt {
-    @apply rounded-full px-1.5 font-mono text-[11px] leading-5 text-base-content/50;
-  }
-  .seg-btn.active .seg-cnt {
-    @apply bg-primary/15 text-primary;
-  }
-
   /* 面板内独立滚动区:细滚动条,滚到底不再把滚动传给页面(避免整页出现滚动条) */
   .panel-scroll {
     @apply overscroll-contain;

@@ -25,7 +25,6 @@ interface FormState {
   sex: 'male' | 'female'
   age: string
   heightCm: string
-  weightKg: string
   targetWeightKg: string
   activity: ActivityLevel
   goal: Goal
@@ -35,15 +34,18 @@ const EMPTY: FormState = {
   sex: 'male',
   age: '',
   heightCm: '',
-  weightKg: '',
   targetWeightKg: '',
   activity: 'light',
   goal: 'maintain',
 }
 
-/** 健康档案:AI 汇总结合这里的数据算 BMR/TDEE 并点评 */
+/**
+ * 健康档案:AI 汇总结合这里的数据算 BMR/TDEE 并点评。
+ * v0.4 起"当前体重"以体重记录为单一事实源(档案接口自动推导回填),此处不再手动填。
+ */
 export function ProfileModal({ open, onClose, notify }: Props) {
   const [form, setForm] = useState<FormState>(EMPTY)
+  const [derivedWeight, setDerivedWeight] = useState<number | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
 
@@ -57,11 +59,11 @@ export function ProfileModal({ open, onClose, notify }: Props) {
             sex: p.sex,
             age: String(p.age),
             heightCm: String(p.heightCm),
-            weightKg: String(p.weightKg),
             targetWeightKg: p.targetWeightKg == null ? '' : String(p.targetWeightKg),
             activity: p.activity,
             goal: p.goal,
           })
+          setDerivedWeight(p.weightKg)
         }
       })
       .catch(err => notify('error', `加载档案失败:${err instanceof Error ? err.message : err}`))
@@ -83,7 +85,6 @@ export function ProfileModal({ open, onClose, notify }: Props) {
           sex: form.sex,
           age: form.age,
           heightCm: form.heightCm,
-          weightKg: form.weightKg,
           targetWeightKg: form.targetWeightKg,
           activity: form.activity,
           goal: form.goal,
@@ -105,7 +106,8 @@ export function ProfileModal({ open, onClose, notify }: Props) {
       <div className="modal-box">
         <h3 className="text-lg font-semibold">健康档案</h3>
         <p className="mt-1 text-sm text-base-content/55">
-          仅存本地。AI 汇总会用 Mifflin-St Jeor 公式按档案估算基础代谢与日常消耗。
+          仅存本库(已上锁)。AI 汇总会用 Mifflin-St Jeor 公式按档案估算基础代谢与日常消耗,
+          体重取你的最新一条体重记录。
         </p>
 
         {!loaded ? (
@@ -136,7 +138,7 @@ export function ProfileModal({ open, onClose, notify }: Props) {
                 女
               </button>
             </div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               <label className="form-control">
                 <span className="label-text mb-1 text-xs text-base-content/55">年龄(岁)</span>
                 <input
@@ -157,16 +159,13 @@ export function ProfileModal({ open, onClose, notify }: Props) {
                   placeholder="175"
                 />
               </label>
-              <label className="form-control">
-                <span className="label-text mb-1 text-xs text-base-content/55">体重(kg)</span>
-                <input
-                  className={field}
-                  value={form.weightKg}
-                  onChange={e => set('weightKg', e.target.value)}
-                  inputMode="decimal"
-                  placeholder="70"
-                />
-              </label>
+            </div>
+            <div className="rounded-xl bg-base-200/60 px-4 py-2.5 font-mono text-xs text-base-content/60">
+              当前体重
+              <b className="ml-2 text-sm tabular-nums text-base-content">
+                {derivedWeight != null ? `${derivedWeight.toFixed(1)} kg` : '未记录'}
+              </b>
+              <span className="ml-2 text-base-content/45">以体重记录为准,在右侧「今日体重」或曲线里记</span>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <label className="form-control">
@@ -218,7 +217,7 @@ export function ProfileModal({ open, onClose, notify }: Props) {
               <button
                 type="submit"
                 className="btn btn-primary btn-sm"
-                disabled={saving || !form.age || !form.heightCm || !form.weightKg}
+                disabled={saving || !form.age || !form.heightCm}
               >
                 {saving ? '保存中…' : '保存'}
               </button>

@@ -4,7 +4,7 @@ export interface Todo {
   text: string
   done: boolean
   createdAt: number
-  /** 由 .ics 订阅导入的日程 */
+  /** 由 .ics 订阅导入的日程(v0.4 起 todos 表只存日程) */
   source?: 'ics'
   /** ICS 事件 UID,用于重复导入去重 */
   uid?: string
@@ -60,6 +60,50 @@ export interface HealthLogRow {
   created_at: number
 }
 
+// ---------- 当日流水(v0.4) ----------
+
+/** 事后记录"今天做了哪些事",多条时间序,供 AI 汇总消化 */
+export interface JournalEntry {
+  id: string
+  text: string
+  createdAt: number
+}
+
+export type JournalStore = Record<string, JournalEntry[]>
+
+export interface JournalRow {
+  id: string
+  date_key: string
+  text: string
+  created_at: number
+}
+
+// ---------- 体重记录(v0.4) ----------
+
+/** 一天一条,同日再录即覆盖(口径:晨起空腹) */
+export interface WeightEntry {
+  dateKey: string
+  weightKg: number
+  updatedAt: number
+}
+
+export type WeightStore = Record<string, WeightEntry>
+
+export interface WeightRow {
+  date_key: string
+  weight_kg: number
+  updated_at: number
+}
+
+// ---------- 登录会话(v0.4) ----------
+
+export interface SessionRow {
+  token_hash: string
+  label: string | null
+  created_at: number
+  expires_at: number
+}
+
 // ---------- 健康档案 ----------
 
 export type ActivityLevel = 'sedentary' | 'light' | 'moderate' | 'high'
@@ -69,7 +113,8 @@ export interface Profile {
   sex: 'male' | 'female'
   age: number
   heightCm: number
-  weightKg: number
+  /** 当前体重:优先由体重记录推导,档案本身可为 null */
+  weightKg: number | null
   targetWeightKg: number | null
   activity: ActivityLevel
   goal: Goal
@@ -110,4 +155,6 @@ export interface AiSummary {
   /** AI 也没估出热量的条数 */
   pendingCount: number
   comment: string
+  /** 汇总时采用的有效体重(最新体重记录,缺省回退档案) */
+  weightKg?: number | null
 }

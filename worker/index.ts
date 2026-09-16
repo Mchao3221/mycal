@@ -1,13 +1,19 @@
 import {
   getAllTodos,
-  createTodo,
-  toggleTodo,
   deleteTodoById,
   insertIcsTodos,
   getAllHealthLogs,
   createHealthLog,
   patchHealthLog,
   deleteHealthLogById,
+  getAllJournal,
+  createJournal,
+  patchJournal,
+  deleteJournalById,
+  getAllWeights,
+  upsertWeight,
+  deleteWeight,
+  getRecentWeights,
   getProfile,
   upsertProfile,
   getAiSummary,
@@ -17,7 +23,8 @@ import {
 } from './db'
 import { parseIcs, expandEvents } from './ics'
 import { HttpError, resolveAiConfig, summarizeDay } from './ai'
-import { isValidDateKey, normKcal, normProfile, HEALTH_KINDS, MEALS } from './validate'
+import { clearSessionCookie, lockNow, normPassword, setupLock, unlockLock, verifySession } from './lock'
+import { isValidDateKey, normKcal, normWeight, normProfile, HEALTH_KINDS, MEALS } from './validate'
 import type { Env } from './env'
 import type { MealSlot } from './types'
 
@@ -35,6 +42,9 @@ async function readBody<T>(req: Request): Promise<T | null> {
   }
 }
 
+/** 锁自身的路由:未解锁也可访问;其余 /api/* 一律先验会话 */
+const OPEN_API = new Set(['/api/lock/status', '/api/lock/setup', '/api/lock/unlock'])
+
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url)
@@ -44,7 +54,17 @@ export default {
     if (!path.startsWith('/api/')) return new Response(null, { status: 404 })
 
     try {
-      return await route(req, env, path, method)
+      let refreshCookie: string | undefined
+      if (!OPEN_API.has(path)) {
+        const status = await verifySession(env.mycalDB, req)
+        if (status.isSet && !status.unlocked) {
+          throw new HttpError(401, '已锁定,请输入访问码解锁')
+        }
+        refreshCookie = status.refreshCookie
+      }
+      const res = await route(req, env, path, method)
+      if (refreshCookie) res.headers.append('Set-Cookie', refreshCookie)
+      return res
     } catch (err) {
       if (err instanceof HttpError) return json({ error: err.message }, err.status)
       console.error(`${method} ${path} failed:`, err)
@@ -57,33 +77,51 @@ export default {
 
 async function route(req: Request, env: Env, path: string, method: string): Promise<Response> {
   const db = env.mycalDB
+  const secure = req.url.startsWith('https')
 
-  // ---- todos ----
+  // ---- 访问码锁 ----
+  if (path === '/api/lock/status' && method === 'GET') {
+    const { refreshCookie, ...st } = await verifySession(db, req)
+    const res = json(st)
+    if (refreshCookie) res.headers.append('Set-Cookie', refreshCookie)
+    return res
+  }
+
+  if (path === '/api/lock/setup' && method === 'POST') {
+    const body = await readBody<{ password?: unknown }>(req)
+    const cookie = await setupLock(db, req, normPassword(body?.password))
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json; charset=utf-8', 'Set-Cookie': cookie },
+    })
+  }
+
+  if (path === '/api/lock/unlock' && method === 'POST') {
+    const body = await readBody<{ password?: unknown }>(req)
+    const cookie = await unlockLock(db, req, normPassword(body?.password))
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json; charset=utf-8', 'Set-Cookie': cookie },
+    })
+  }
+
+  if (path === '/api/lock/lock' && method === 'POST') {
+    await lockNow(db)
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json; charset=utf-8', 'Set-Cookie': clearSessionCookie(secure) },
+    })
+  }
+
+  // ---- 日程(todos 表 v0.4 起只服务 ICS;新增/切换已退役) ----
   if (path === '/api/todos' && method === 'GET') {
     return json(await getAllTodos(db))
-  }
-
-  if (path === '/api/todos' && method === 'POST') {
-    const body = await readBody<{ dateKey?: string; text?: string }>(req)
-    if (!body || !isValidDateKey(body.dateKey)) {
-      throw new HttpError(400, 'dateKey 需为 YYYY-MM-DD')
-    }
-    const text = String(body.text ?? '').trim()
-    if (!text) throw new HttpError(400, 'text 不能为空')
-    return json(await createTodo(db, body.dateKey, text), 201)
-  }
-
-  const toggleMatch = path.match(/^\/api\/todos\/([^/]+)\/toggle$/)
-  if (toggleMatch && method === 'POST') {
-    const updated = await toggleTodo(db, toggleMatch[1])
-    if (!updated) throw new HttpError(404, 'todo 不存在')
-    return json(updated)
   }
 
   const todoMatch = path.match(/^\/api\/todos\/([^/]+)$/)
   if (todoMatch && method === 'DELETE') {
     const ok = await deleteTodoById(db, todoMatch[1])
-    if (!ok) throw new HttpError(404, 'todo 不存在')
+    if (!ok) throw new HttpError(404, '日程不存在')
     return json({ ok: true })
   }
 
@@ -97,7 +135,7 @@ async function route(req: Request, env: Env, path: string, method: string): Prom
     let resp: Response
     try {
       resp = await fetch(target, {
-        headers: { 'User-Agent': 'MyCal/0.3 (+cloudflare-workers)' },
+        headers: { 'User-Agent': 'MyCal/0.4 (+cloudflare-workers)' },
         redirect: 'follow',
         signal: AbortSignal.timeout(15_000),
       })
@@ -114,6 +152,62 @@ async function route(req: Request, env: Env, path: string, method: string): Prom
 
     const { imported, duplicates } = await insertIcsTodos(db, items)
     return json({ fetchedEvents: events.length, imported, duplicates, skippedRecurring, outOfWindow })
+  }
+
+  // ---- 当日流水 ----
+  if (path === '/api/journal' && method === 'GET') {
+    return json(await getAllJournal(db))
+  }
+
+  if (path === '/api/journal' && method === 'POST') {
+    const body = await readBody<{ dateKey?: string; text?: string }>(req)
+    if (!body || !isValidDateKey(body.dateKey)) {
+      throw new HttpError(400, 'dateKey 需为 YYYY-MM-DD')
+    }
+    const text = String(body.text ?? '').trim()
+    if (!text) throw new HttpError(400, 'text 不能为空')
+    if (text.length > 500) throw new HttpError(400, 'text 超长(≤500 字)')
+    return json(await createJournal(db, body.dateKey, text), 201)
+  }
+
+  const journalMatch = path.match(/^\/api\/journal\/([^/]+)$/)
+  if (journalMatch && method === 'PATCH') {
+    const body = await readBody<{ text?: unknown }>(req)
+    const text = String(body?.text ?? '').trim()
+    if (!text) throw new HttpError(400, 'text 不能为空')
+    if (text.length > 500) throw new HttpError(400, 'text 超长(≤500 字)')
+    const updated = await patchJournal(db, journalMatch[1], text)
+    if (!updated) throw new HttpError(404, '流水记录不存在')
+    return json(updated)
+  }
+
+  if (journalMatch && method === 'DELETE') {
+    const ok = await deleteJournalById(db, journalMatch[1])
+    if (!ok) throw new HttpError(404, '流水记录不存在')
+    return json({ ok: true })
+  }
+
+  // ---- 体重记录 ----
+  if (path === '/api/weights' && method === 'GET') {
+    return json(await getAllWeights(db))
+  }
+
+  if (path === '/api/weights' && method === 'POST') {
+    const body = await readBody<{ dateKey?: string; weightKg?: unknown }>(req)
+    if (!body || !isValidDateKey(body.dateKey)) {
+      throw new HttpError(400, 'dateKey 需为 YYYY-MM-DD')
+    }
+    const w = normWeight(body.weightKg)
+    if (w === undefined) throw new HttpError(400, '体重需为 20~400 kg 的数字')
+    return json(await upsertWeight(db, body.dateKey, w))
+  }
+
+  const weightMatch = path.match(/^\/api\/weights\/(\d{4}-\d{2}-\d{2})$/)
+  if (weightMatch && method === 'DELETE') {
+    if (!isValidDateKey(weightMatch[1])) throw new HttpError(400, 'dateKey 需为 YYYY-MM-DD')
+    const ok = await deleteWeight(db, weightMatch[1])
+    if (!ok) throw new HttpError(404, '该日期没有体重记录')
+    return json({ ok: true })
   }
 
   // ---- 打卡日记 ----
@@ -178,9 +272,12 @@ async function route(req: Request, env: Env, path: string, method: string): Prom
     return json({ ok: true })
   }
 
-  // ---- 健康档案 ----
+  // ---- 健康档案(当前体重以体重记录为单一事实源) ----
   if (path === '/api/profile' && method === 'GET') {
-    return json(await getProfile(db))
+    const p = await getProfile(db)
+    if (!p) return json(null)
+    const [latest] = await getRecentWeights(db, '9999-12-31', 1)
+    return json(latest ? { ...p, weightKg: latest.weightKg } : p)
   }
 
   if (path === '/api/profile' && method === 'PUT') {

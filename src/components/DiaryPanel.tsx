@@ -123,10 +123,6 @@ export function DiaryPanel({
 
   const generate = useCallback(async () => {
     if (generating) return
-    if (!logs.length) {
-      notify('error', '这天还没有打卡记录,先记几笔吧')
-      return
-    }
     setGenerating(true)
     try {
       const s = await api<AiSummary>('/api/ai/summary', {
@@ -319,7 +315,7 @@ export function DiaryPanel({
           {[...diet, ...exercise].map(renderItem)}
           {logs.length === 0 && (
             <li className="py-4 text-center text-sm text-base-content/50">
-              上方记一笔今天的吃动,再点「生成今日汇总」
+              还没记吃动;上面的流水也算数,点「生成今日汇总」让 AI 一起看
             </li>
           )}
         </ul>

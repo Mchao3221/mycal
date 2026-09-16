@@ -10,6 +10,13 @@ export function fmtKey(y: number, m: number, d: number): string {
   return `${y}-${pad2(m + 1)}-${pad2(d)}`
 }
 
+/** 日期 key 偏移 n 天(按 UTC 整数日运算,规避夏令时/月份进位问题) */
+export function shiftKey(key: string, deltaDays: number): string {
+  const [y, m, d] = key.split('-').map(Number)
+  const t = new Date(Date.UTC(y, m - 1, d + deltaDays))
+  return `${t.getUTCFullYear()}-${pad2(t.getUTCMonth() + 1)}-${pad2(t.getUTCDate())}`
+}
+
 export function todayDate(): Date {
   const now = new Date()
   return new Date(now.getFullYear(), now.getMonth(), now.getDate())

@@ -5,12 +5,19 @@ import type {
   HealthLogInput,
   HealthLogRow,
   HealthStore,
+  JournalEntry,
+  JournalRow,
+  JournalStore,
   MealSlot,
   Profile,
   ProfileRow,
+  SessionRow,
   Todo,
   TodoRow,
   TodoStore,
+  WeightEntry,
+  WeightRow,
+  WeightStore,
 } from './types'
 
 type DB = Env['mycalDB']
@@ -22,7 +29,7 @@ function toTodo(r: TodoRow): Todo {
   return t
 }
 
-/** 全量读取:Record<'YYYY-MM-DD', Todo[]> */
+/** 全量读取(v0.4 起仅剩 ICS 日程):Record<'YYYY-MM-DD', Todo[]> */
 export async function getAllTodos(db: Env['mycalDB']): Promise<TodoStore> {
   const res = await db
     .prepare('SELECT * FROM todos ORDER BY created_at ASC, rowid ASC')
@@ -34,29 +41,7 @@ export async function getAllTodos(db: Env['mycalDB']): Promise<TodoStore> {
   return store
 }
 
-export async function createTodo(db: Env['mycalDB'], dateKey: string, text: string): Promise<Todo> {
-  const id = crypto.randomUUID()
-  const createdAt = Date.now()
-  await db
-    .prepare('INSERT INTO todos (id, date_key, text, done, created_at) VALUES (?, ?, ?, 0, ?)')
-    .bind(id, dateKey, text, createdAt)
-    .run()
-  return { id, text, done: false, createdAt }
-}
-
-async function getRowById(db: Env['mycalDB'], id: string): Promise<TodoRow | null> {
-  return db.prepare('SELECT * FROM todos WHERE id = ?').bind(id).first<TodoRow>()
-}
-
-/** 翻转完成态;不存在返回 null */
-export async function toggleTodo(db: Env['mycalDB'], id: string): Promise<Todo | null> {
-  const cur = await getRowById(db, id)
-  if (!cur) return null
-  await db.prepare('UPDATE todos SET done = ? WHERE id = ?').bind(cur.done ? 0 : 1, id).run()
-  const r = await getRowById(db, id)
-  return r ? toTodo(r) : null
-}
-
+/** 按 id 删除日程(纠错用);v0.4 起待办的新增/切换已退役 */
 export async function deleteTodoById(db: Env['mycalDB'], id: string): Promise<boolean> {
   const res = await db.prepare('DELETE FROM todos WHERE id = ?').bind(id).run()
   return (res.meta.changes ?? 0) > 0
@@ -212,7 +197,7 @@ export async function getProfile(db: DB): Promise<Profile | null> {
     sex: r.sex as Profile['sex'],
     age: r.age as number,
     heightCm: r.height_cm as number,
-    weightKg: r.weight_kg as number,
+    weightKg: r.weight_kg as number | null,
     targetWeightKg: r.target_weight_kg ?? null,
     activity: r.activity as Profile['activity'],
     goal: r.goal as Profile['goal'],
@@ -282,4 +267,128 @@ export async function setSetting(db: DB, key: string, value: string): Promise<vo
 
 export async function deleteSetting(db: DB, key: string): Promise<void> {
   await db.prepare('DELETE FROM settings WHERE key = ?').bind(key).run()
+}
+
+// ---------- 当日流水(v0.4) ----------
+
+function toJournal(r: JournalRow): JournalEntry {
+  return { id: r.id, text: r.text, createdAt: r.created_at }
+}
+
+/** 全量读取流水:Record<'YYYY-MM-DD', JournalEntry[]> */
+export async function getAllJournal(db: DB): Promise<JournalStore> {
+  const res = await db
+    .prepare('SELECT * FROM day_logs ORDER BY created_at ASC, rowid ASC')
+    .all<JournalRow>()
+  const store: JournalStore = {}
+  for (const r of res.results) {
+    ;(store[r.date_key] ??= []).push(toJournal(r))
+  }
+  return store
+}
+
+export async function getJournalByDate(db: DB, dateKey: string): Promise<JournalEntry[]> {
+  const res = await db
+    .prepare('SELECT * FROM day_logs WHERE date_key = ? ORDER BY created_at ASC, rowid ASC')
+    .bind(dateKey)
+    .all<JournalRow>()
+  return res.results.map(toJournal)
+}
+
+export async function createJournal(db: DB, dateKey: string, text: string): Promise<JournalEntry> {
+  const id = crypto.randomUUID()
+  const createdAt = Date.now()
+  await db.prepare('INSERT INTO day_logs (id, date_key, text, created_at) VALUES (?, ?, ?, ?)').bind(id, dateKey, text, createdAt).run()
+  return { id, text, createdAt }
+}
+
+/** 改流水文字;不存在返回 null */
+export async function patchJournal(db: DB, id: string, text: string): Promise<JournalEntry | null> {
+  const res = await db.prepare('UPDATE day_logs SET text = ? WHERE id = ?').bind(text, id).run()
+  if (!res.meta.changes) return null
+  const r = await db.prepare('SELECT * FROM day_logs WHERE id = ?').bind(id).first<JournalRow>()
+  return r ? toJournal(r) : null
+}
+
+export async function deleteJournalById(db: DB, id: string): Promise<boolean> {
+  const res = await db.prepare('DELETE FROM day_logs WHERE id = ?').bind(id).run()
+  return (res.meta.changes ?? 0) > 0
+}
+
+// ---------- 体重记录(v0.4) ----------
+
+function toWeight(r: WeightRow): WeightEntry {
+  return { dateKey: r.date_key, weightKg: r.weight_kg, updatedAt: r.updated_at }
+}
+
+/** 全量读取体重:Record<'YYYY-MM-DD', WeightEntry> */
+export async function getAllWeights(db: DB): Promise<WeightStore> {
+  const res = await db.prepare('SELECT * FROM weight_logs ORDER BY date_key ASC').all<WeightRow>()
+  const store: WeightStore = {}
+  for (const r of res.results) store[r.date_key] = toWeight(r)
+  return store
+}
+
+/** 按日期 upsert:同日再录即覆盖 */
+export async function upsertWeight(db: DB, dateKey: string, weightKg: number): Promise<WeightEntry> {
+  const updatedAt = Date.now()
+  await db
+    .prepare(
+      `INSERT INTO weight_logs (date_key, weight_kg, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT(date_key) DO UPDATE SET weight_kg = excluded.weight_kg, updated_at = excluded.updated_at`,
+    )
+    .bind(dateKey, weightKg, updatedAt)
+    .run()
+  return { dateKey, weightKg, updatedAt }
+}
+
+export async function deleteWeight(db: DB, dateKey: string): Promise<boolean> {
+  const res = await db.prepare('DELETE FROM weight_logs WHERE date_key = ?').bind(dateKey).run()
+  return (res.meta.changes ?? 0) > 0
+}
+
+/** 早于等于 fromKey 的最近 n 条体重(升序返回),供 AI 汇总算近 7 日均值 */
+export async function getRecentWeights(db: DB, fromKey: string, n = 7): Promise<WeightEntry[]> {
+  const res = await db
+    .prepare('SELECT * FROM weight_logs WHERE date_key <= ? ORDER BY date_key DESC LIMIT ?')
+    .bind(fromKey, n)
+    .all<WeightRow>()
+  return res.results.map(toWeight).reverse()
+}
+
+// ---------- 登录会话(v0.4;lock.ts 专用) ----------
+
+export async function getSessionRow(db: DB, tokenHash: string): Promise<SessionRow | null> {
+  return db.prepare('SELECT * FROM auth_sessions WHERE token_hash = ?').bind(tokenHash).first<SessionRow>()
+}
+
+export async function createSessionRow(
+  db: DB,
+  tokenHash: string,
+  label: string,
+  createdAt: number,
+  expiresAt: number,
+): Promise<void> {
+  await db
+    .prepare('INSERT OR REPLACE INTO auth_sessions (token_hash, label, created_at, expires_at) VALUES (?, ?, ?, ?)')
+    .bind(tokenHash, label, createdAt, expiresAt)
+    .run()
+}
+
+export async function touchSessionRow(db: DB, tokenHash: string, expiresAt: number): Promise<void> {
+  await db.prepare('UPDATE auth_sessions SET expires_at = ? WHERE token_hash = ?').bind(expiresAt, tokenHash).run()
+}
+
+/** 清过期会话,并在超过 max 条时淘汰最久未活跃的,给新会话腾位 */
+export async function trimSessions(db: DB, max: number): Promise<void> {
+  await db.prepare('DELETE FROM auth_sessions WHERE expires_at <= ?').bind(Date.now()).run()
+  const rows = await db.prepare('SELECT token_hash FROM auth_sessions ORDER BY created_at ASC').all<{ token_hash: string }>()
+  const excess = rows.results.length - (max - 1)
+  for (const r of rows.results.slice(0, Math.max(0, excess))) {
+    await db.prepare('DELETE FROM auth_sessions WHERE token_hash = ?').bind(r.token_hash).run()
+  }
+}
+
+export async function clearSessions(db: DB): Promise<void> {
+  await db.prepare('DELETE FROM auth_sessions').run()
 }

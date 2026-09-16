@@ -3,7 +3,9 @@
 import {
   fillKcalIfNull,
   getHealthLogsByDate,
+  getJournalByDate,
   getProfile,
+  getRecentWeights,
   getSetting,
   upsertAiSummary,
 } from './db'
@@ -38,7 +40,7 @@ export const ACTIVITY_FACTOR: Record<string, number> = {
  */
 export function calcEnergy(p: Profile | null): { bmr: number; tdee: number; targetKcal: number } {
   if (!p || !p.sex || !p.age || !p.heightCm || !p.weightKg) {
-    throw new HttpError(400, '请先在「档案」里填齐性别、年龄、身高、体重')
+    throw new HttpError(400, '请先在「档案」里填齐性别、年龄、身高(体重取最新体重记录)')
   }
   const base = 10 * p.weightKg + 6.25 * p.heightCm - 5 * p.age
   const bmr = Math.round(p.sex === 'male' ? base + 5 : base - 161)
@@ -106,17 +108,23 @@ async function chatCompletion(cfg: AiConfig, messages: { role: string; content: 
 
 /**
  * 生成(或重新生成)某天的 AI 汇总:
- * 1. 前置:有打卡、档案四要素齐全、API Key 已配置;
- * 2. 一次 chat 调用:估算缺热量条目(只回填空值)+ 中文点评;
- * 3. 服务端确定性计算收支,结果落库缓存。
+ * 1. 前置:当天有打卡或流水记录、档案齐全、API Key 已配置;
+ * 2. 一次 chat 调用:估算缺热量条目(只回填空值)+ 结合打卡/流水/体重写中文点评;
+ * 3. 服务端确定性计算收支(体重优先用最新体重记录),结果落库缓存。
  */
 export async function summarizeDay(db: Env['mycalDB'], env: Env, dateKey: string): Promise<AiSummary> {
   const logs = await getHealthLogsByDate(db, dateKey)
-  if (!logs.length) throw new HttpError(400, '这天还没有打卡记录,先去「打卡」Tab 记几笔吧')
+  const journal = await getJournalByDate(db, dateKey)
+  if (!logs.length && !journal.length) throw new HttpError(400, '这天还没有任何记录,先记几笔吧')
 
   const profile = await getProfile(db)
-  if (!profile) throw new HttpError(400, '请先在「档案」里填齐性别、年龄、身高、体重')
-  const energy = calcEnergy(profile)
+  if (!profile) throw new HttpError(400, '请先在「档案」里填齐性别、年龄、身高')
+  // 有效体重:优先当天(或最近)的体重记录,回退档案手动值 —— 单一事实源
+  const recentWeights = await getRecentWeights(db, dateKey, 7)
+  const latest = recentWeights[recentWeights.length - 1]
+  const effWeight = latest?.weightKg ?? profile.weightKg
+  if (!effWeight) throw new HttpError(400, '请先在「今日体重」记一笔,或在「档案」里填写体重')
+  const energy = calcEnergy({ ...profile, weightKg: effWeight })
   const cfg = await resolveAiConfig(db, env)
   if (!cfg.apiKey) {
     throw new HttpError(400, '尚未配置 AI 服务,请点击顶栏「AI」填写 Base URL / API Key / 模型')
@@ -131,10 +139,14 @@ export async function summarizeDay(db: Env['mycalDB'], env: Env, dateKey: string
     ...(l.kcal != null ? { 已知千卡: l.kcal } : {}),
   }))
 
+  const weight7dAvg = recentWeights.length
+    ? Math.round((recentWeights.reduce((s, w) => s + w.weightKg, 0) / recentWeights.length) * 10) / 10
+    : null
+
   const system = [
-    '你是 MyCal 应用中的营养师兼运动科学助手。用户会给你某天的健康档案、热量参数和打卡条目(饮食=摄入,运动=消耗)。',
+    '你是 MyCal 应用中的营养师兼健康记录助手。用户会给你某天的健康档案、热量参数、打卡条目(饮食=摄入,运动=消耗),以及当天记下的流水(做了哪些事)。',
     '任务一 estimates:为「待估算 id 列表」中的每一条估一个合理千卡数,取常见份量的中位数,结合文字里的份量描述,只输出正整数;列表以外的 id 一律不得出现,列表为空则输出空数组。',
-    '任务二 comment:150 字以内的中文点评。结合基础代谢、总消耗、建议摄入,说明今日摄入与消耗的平衡情况、与目标的方向是否一致,并给一条具体可执行的改进建议(如蛋白质、蔬菜、饮水、加餐时机)。语气友好直接,不用 Markdown,不堆砌客套话。',
+    '任务二 comment:150 字以内的中文点评。结合基础代谢、总消耗、建议摄入,说明今日摄入与消耗的平衡情况、与目标的方向是否一致;并参考当日流水与体重(含近 7 日均值,日常波动多为水分),给一条具体可执行的改进建议(如蛋白质、蔬菜、饮水、加餐时机、久坐打断)。语气友好直接,不用 Markdown,不堆砌客套话。',
     '只输出一个 JSON 对象,不要任何解释,格式:{"estimates":[{"id":"...","kcal":420}],"comment":"..."}',
   ].join('\n')
 
@@ -144,12 +156,14 @@ export async function summarizeDay(db: Env['mycalDB'], env: Env, dateKey: string
       性别: SEX_LABEL[profile.sex] ?? '',
       年龄: profile.age,
       身高cm: profile.heightCm,
-      体重kg: profile.weightKg,
+      体重kg: effWeight,
+      ...(weight7dAvg ? { 近7日均重kg: weight7dAvg } : {}),
       ...(profile.targetWeightKg ? { 目标体重kg: profile.targetWeightKg } : {}),
       目标: GOAL_LABEL[profile.goal] ?? '保持',
     },
     热量参数: { 基础代谢: energy.bmr, 日常总消耗TDEE: energy.tdee, 建议摄入: energy.targetKcal },
     当日条目: itemsForAi,
+    ...(journal.length ? { 当日流水: journal.map(j => j.text) } : {}),
     待估算id列表: pending.map(l => l.id),
   })
 
@@ -210,6 +224,7 @@ export async function summarizeDay(db: Env['mycalDB'], env: Env, dateKey: string
       typeof parsed?.comment === 'string' && parsed.comment.trim()
         ? parsed.comment.trim().slice(0, 2000)
         : '(AI 未返回点评)',
+    weightKg: effWeight,
   }
   return upsertAiSummary(db, dateKey, summary)
 }

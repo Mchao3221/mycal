@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-MyCal —「日历 + 每日待办 + 打卡日记」Web 应用。前端 Vite 8 + React 18 + TS(严格模式)+ Tailwind v4 + daisyUI 5;后端为 Cloudflare Worker(`worker/`,自写轻路由、无框架),数据存 Cloudflare D1(SQLite);v0.3.1 起有打卡日记 + AI 每日热量汇总(OpenAI 兼容,结合健康档案 BMR/TDEE)。规划与交互设计详见 `PLAN.md` 与 `README.md`(均为中文,提交信息也用中文)。
+MyCal —「私人 AI 健康日志」Web 应用(v0.4 由"日历+待办工作台"转型)。前端 Vite 8 + React 18 + TS(严格模式)+ Tailwind v4 + daisyUI 5;后端为 Cloudflare Worker(`worker/`,自写轻路由、无框架),数据存 Cloudflare D1(SQLite)。主体功能:访问码锁、迷你月历导航、当日流水(`day_logs`)、吃动打卡、体重曲线/BMI(`weight_logs`)、AI 每日汇总(OpenAI 兼容,结合 BMR/TDEE、流水与体重)。规划与交互设计详见 `PLAN.md` 与 `README.md`(均为中文,提交信息也用中文)。
 
 ## 常用命令
 
@@ -31,9 +31,11 @@ pnpm run deploy         # build → 远端 D1 迁移 → wrangler deploy(顺序�
 - **两套 tsconfig、两个运行环境**:`tsconfig.json` 编译 `src/`(浏览器 + DOM),`tsconfig.worker.json` 编译 `worker/`(Cloudflare Workers 类型)。前后端不共享代码;新增全局类型需改对应 env.d.ts(`worker/env.d.ts` 声明 D1 绑定 `mycalDB`)。
 - **Worker 无框架路由**:`worker/index.ts` 的 `fetch` 入口用正则 + method 匹配处理 `/api/*`,未匹配的请求落到 SPA 静态资产回退(`wrangler.jsonc` 的 `not_found_handling`)。改 API 时保持这个模式。
 - **表结构唯一事实源是 `migrations/*.sql`**:代码里没有任何建表语句。改表必须新增 `000N_描述.sql` 增量迁移(不重写历史),`pnpm db:migrate:local` 本地验证;build 不连库,结构漂移只在运行时暴露。
-- **单表双用途**:`todos` 表同时存手动待办(`source` 为 NULL)和 ICS 导入的日程(`source='ics'`)。ICS 去重靠唯一索引 `(uid, date_key)` + `INSERT OR IGNORE`(`worker/db.ts` 的 `insertIcsTodos`,据此统计 imported/duplicates;D1 batch 按 50 条分块)。
-- **前端数据流**:`src/hooks/useTodos.ts`(待办/日程)与 `src/hooks/useHealth.ts`(打卡日记)各拉一次全量 `Record<'YYYY-MM-DD', T[]>` 后本地分发;共享 fetch 封装在 `src/utils/api.ts`(非 2xx 抛后端 `{ error }`)。`App.tsx` 按 `source` 拆待办/日程两路,打卡走独立 `/api/health`,合算日历圆点(蓝=日程,琥珀=待办,绿=打卡)。
-- **打卡热量三态与 AI 汇总**:单条 `kcal` 为 NULL=待估 / `kcal_source='ai'`=AI 估算 / `'manual'`=手动;`worker/ai.ts` 估算**只回填空值,不覆盖手动**。BMR/TDEE 在 `worker/ai.ts` 用 Mifflin-St Jeor 服务端确定性计算,AI 只负责估单条热量 + 写点评,汇总按天缓存于 `ai_summaries`。
+- **访问码锁(v0.4,`worker/lock.ts`)**:`fetch` 入口对除 `/api/lock/status|setup|unlock` 外的所有 `/api/*` 验会话,无效一律 401。密码 PBKDF2-SHA256(15 万迭代)存 `settings` 的 `lock.salt/lock.hash`;解锁签发随机 token,`auth_sessions` 只存其 SHA-256(所以"上锁"删表即可真撤销所有设备);HttpOnly cookie `mycal_session`,7 天滑动续期、上限 5 会话;失败计数存 `lock.fails`,≥5 次指数退避 429。忘记访问码:D1 删 `lock.*` 三行(见 `docs/sql/解锁码重置.sql`)。
+- **todos 表只存 ICS 日程**(v0.4 起,手动待办退役且已清空):ICS 去重靠唯一索引 `(uid, date_key)` + `INSERT OR IGNORE`(`worker/db.ts` 的 `insertIcsTodos`,据此统计 imported/duplicates;D1 batch 按 50 条分块)。新增记录类需求一律走 `day_logs`/`health_logs`/`weight_logs`。
+- **前端数据流**:`App.tsx` 先查 `/api/lock/status` 决定渲染锁屏还是工作台(checking/setup/locked/ready 四态,数据 hooks 都在解锁后的 Workspace 里才挂载)。`useEvents`/`useHealth`/`useJournal`/`useWeights` 四个 hooks 各拉一次全量后本地分发(新增表请沿用该模式);共享 fetch 封装在 `src/utils/api.ts`(非 2xx 抛后端 `{ error }`)。布局:左栏 240px(迷你月历 + 本月概况 + 体重走势),右栏 `DayView` 一日一卡(日程条→流水→今日体重→吃动打卡+AI 汇总)。日历圆点两色:蓝=日程,绿=当天有任意记录。
+- **体重是单一事实源**:`weight_logs` 一天一条(`date_key` 主键,同日 upsert);`GET /api/profile` 的 `weightKg` 由最新体重记录推导回填,档案弹窗不再手填体重;AI 汇总的 BMR/TDEE 同样用有效体重(记录优先,回退 `profile.weight_kg`)。统计纯函数(7 日均/BMI 中国标准/连续记录)在 `src/utils/stats.ts`,图表为手写 SVG,不引库。
+- **打卡热量三态与 AI 汇总**:单条 `kcal` 为 NULL=待估 / `kcal_source='ai'`=AI 估算 / `'manual'`=手动;`worker/ai.ts` 估算**只回填空值,不覆盖手动**。BMR/TDEE 在 `worker/ai.ts` 用 Mifflin-St Jeor 服务端确定性计算,AI 只负责估单条热量 + 写点评(prompt 会带上当日流水与体重,当天只有流水也能生成),汇总按天缓存于 `ai_summaries`。
 - **AI 服务配置**:OpenAI 兼容 `/chat/completions`。优先级 `settings` 表 > 环境变量 `AI_BASE_URL/AI_API_KEY/AI_MODEL`(生产用 `wrangler secret put AI_API_KEY`)> 默认值。**API Key 只写不读**(GET `/api/ai/config` 仅返回 `hasKey`)。
 - **日期计算无库**:`src/utils/date.ts` 自写;`worker/ics.ts` 也是自写 ICS 解析器。
 - **Workers 无本机时区**:worker 侧时间统一按 UTC 墙钟处理(`worker/ics.ts` 的 `dateKeyOf` 用 getUTC*),导入窗口为今天(UTC)±365 天,RRULE 不展开仅计数 —— 改动时间逻辑时保持这个约定。

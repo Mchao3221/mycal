@@ -3,7 +3,7 @@ export interface Todo {
   text: string
   done: boolean
   createdAt: number
-  /** 由 .ics 订阅导入的日程 */
+  /** 由 .ics 订阅导入的日程(v0.4 起 todos 只承载日程) */
   source?: 'ics'
   /** ICS 事件 UID,用于重复导入去重 */
   uid?: string
@@ -12,8 +12,38 @@ export interface Todo {
 /** 后端返回的存储结构:日期 key(YYYY-MM-DD) -> 当天条目 */
 export type TodoStore = Record<string, Todo[]>
 
-/** 日历圆点:event = 有 ICS 日程(蓝),todo = 有本地待办(琥珀),health = 有打卡(绿) */
-export type DotMark = 'event' | 'todo' | 'health'
+/** 日历圆点:event = 有 ICS 日程(蓝),record = 当天有记录(打卡/流水/体重,绿) */
+export type DotMark = 'event' | 'record'
+
+// ---------- 访问码锁 ----------
+
+export interface LockStatus {
+  /** 是否已设置访问码(未设置先走设置流程) */
+  isSet: boolean
+  unlocked: boolean
+}
+
+// ---------- 当日流水 ----------
+
+/** 事后记录「今天做了哪些事」,多条时间序,供 AI 汇总消化 */
+export interface JournalEntry {
+  id: string
+  text: string
+  createdAt: number
+}
+
+export type JournalStore = Record<string, JournalEntry[]>
+
+// ---------- 体重记录 ----------
+
+/** 一天一条,同日再录即覆盖(口径:晨起空腹) */
+export interface WeightEntry {
+  dateKey: string
+  weightKg: number
+  updatedAt: number
+}
+
+export type WeightStore = Record<string, WeightEntry>
 
 // ---------- 打卡日记 ----------
 
@@ -51,7 +81,8 @@ export interface Profile {
   sex: 'male' | 'female'
   age: number
   heightCm: number
-  weightKg: number
+  /** 当前体重:由最新体重记录推导(档案不再手动填);无任何记录时为 null */
+  weightKg: number | null
   targetWeightKg: number | null
   activity: ActivityLevel
   goal: Goal
@@ -87,4 +118,6 @@ export interface AiSummary {
   /** AI 也没估出热量的条数 */
   pendingCount: number
   comment: string
+  /** 汇总时采用的有效体重 */
+  weightKg?: number | null
 }
