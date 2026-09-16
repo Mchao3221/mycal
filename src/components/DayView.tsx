@@ -97,16 +97,19 @@ export function DayView({
 
           <div className="border-t border-base-300" />
 
-          <h3 className="m-0 -mb-2 font-mono text-[11px] uppercase tracking-[0.08em] text-base-content/45">
-            🍽 吃动打卡
-          </h3>
-          <DiaryPanel
-            logs={diaryLogs}
-            onAdd={onDiaryAdd}
-            onPatch={onDiaryPatch}
-            onRemove={onDiaryRemove}
-            notify={notify}
-          />
+          {/* 标题与面板包成一整块:避免负边距把「摄入…」合计行顶到标题上 */}
+          <div>
+            <h3 className="m-0 mb-3 font-mono text-[11px] uppercase tracking-[0.08em] text-base-content/45">
+              🍽 吃动打卡
+            </h3>
+            <DiaryPanel
+              logs={diaryLogs}
+              onAdd={onDiaryAdd}
+              onPatch={onDiaryPatch}
+              onRemove={onDiaryRemove}
+              notify={notify}
+            />
+          </div>
         </div>
 
         {/* 右:AI 汇总独立面板 */}
