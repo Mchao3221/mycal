@@ -110,7 +110,7 @@ export function DayView({
         </div>
 
         {/* 右:AI 汇总独立面板 */}
-        <aside className="panel-scroll border-t border-base-300 bg-base-200/30 px-5 py-5 lg:w-[360px] lg:flex-none lg:overflow-y-auto lg:border-t-0 lg:border-l">
+        <aside className="panel-scroll border-t border-base-300 bg-base-200/30 px-5 py-5 lg:w-[540px] lg:flex-none lg:overflow-y-auto lg:border-t-0 lg:border-l">
           <AiSummaryPanel dateKey={dateKey} notify={notify} onGenerated={onSummaryGenerated} />
         </aside>
       </div>
