@@ -71,12 +71,12 @@ export function DayView({
           {isToday && <span className="badge badge-primary badge-sm">今天</span>}
         </header>
 
-        {/* 日程:仅作展示的一根细时间轴 */}
-        {events.length > 0 && (
-          <div className="mb-5 rounded-xl border border-base-300 bg-base-200/40 px-4 py-2.5">
-            <h3 className="mb-1 font-mono text-[11px] uppercase tracking-[0.08em] text-base-content/45">
-              日程 · {events.length}
-            </h3>
+        {/* 日程:常驻卡片(无日程显示占位行),避免切换日期时整块出现/消失导致布局跳动 */}
+        <div className="mb-5 rounded-xl border border-base-300 bg-base-200/40 px-4 py-2.5">
+          <h3 className="mb-1 font-mono text-[11px] uppercase tracking-[0.08em] text-base-content/45">
+            日程 · {events.length}
+          </h3>
+          {events.length > 0 ? (
             <ul className="m-0 list-none p-0">
               {events.map(t => {
                 const mt = t.text.match(/^(\d{2}:\d{2})\s+(.*)$/)
@@ -98,8 +98,10 @@ export function DayView({
                 )
               })}
             </ul>
-          </div>
-        )}
+          ) : (
+            <div className="py-1.5 text-sm text-base-content/35">该日暂无日程</div>
+          )}
+        </div>
 
         {/* 当日流水 */}
         <JournalPanel
