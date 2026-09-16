@@ -1,10 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { AiSummary, HealthKind, HealthLog, HealthLogInput, MealSlot } from '../types'
-import { api } from '../utils/api'
-import { todayKey } from '../utils/date'
+import type { HealthKind, HealthLog, HealthLogInput, MealSlot } from '../types'
 
 interface Props {
-  dateKey: string
   logs: HealthLog[]
   onAdd: (input: HealthLogInput) => Promise<void>
   onPatch: (id: string, patch: Partial<HealthLogInput>) => Promise<void>
@@ -30,37 +27,16 @@ function defaultMeal(): MealSlot {
 
 const kcalOf = (l: HealthLog) => l.kcal ?? 0
 
-export function DiaryPanel({
-  dateKey,
-  logs,
-  onAdd,
-  onPatch,
-  onRemove,
-  notify,
-}: Props) {
+/** 吃动打卡:饮食/运动条目快记 + 行内热量修正(AI 估算在右侧汇总面板) */
+export function DiaryPanel({ logs, onAdd, onPatch, onRemove, notify }: Props) {
   const [kind, setKind] = useState<HealthKind>('diet')
   const [meal, setMeal] = useState<MealSlot>(defaultMeal)
   const [draft, setDraft] = useState('')
   const [kcalDraft, setKcalDraft] = useState('')
   const [busy, setBusy] = useState(false)
-
-  const [summary, setSummary] = useState<AiSummary | null>(null)
-  const [generating, setGenerating] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
   const [editKcal, setEditKcal] = useState('')
   const editRef = useRef<HTMLInputElement>(null)
-
-  // 切日期:拉当天已缓存的 AI 汇总,并退出行内编辑
-  useEffect(() => {
-    setEditId(null)
-    let on = true
-    api<AiSummary | null>(`/api/ai/summary/${dateKey}`)
-      .then(s => on && setSummary(s))
-      .catch(err => console.error('加载 AI 汇总失败:', err))
-    return () => {
-      on = false
-    }
-  }, [dateKey])
 
   useEffect(() => {
     if (editId) editRef.current?.focus()
@@ -118,48 +94,17 @@ export function DiaryPanel({
       await onPatch(id, { kcal: null })
     }
     setEditId(null)
-    // 数值变了,旧汇总保留但提示可重新生成
+    // 数值变了,旧汇总保留,右侧面板可「重新生成」
   }, [editId, editKcal, notify, onPatch])
-
-  const generate = useCallback(async () => {
-    if (generating) return
-    setGenerating(true)
-    try {
-      const s = await api<AiSummary>('/api/ai/summary', {
-        method: 'POST',
-        body: JSON.stringify({ dateKey }),
-      })
-      setSummary(s)
-      notify(
-        'success',
-        s.pendingCount
-          ? `汇总完成 · ${s.pendingCount} 条未能估算热量,可手动补填`
-          : '今日 AI 汇总已生成',
-      )
-    } catch (err) {
-      notify('error', err instanceof Error ? err.message : String(err))
-    } finally {
-      setGenerating(false)
-    }
-  }, [dateKey, generating, logs.length, notify])
-
-  const clearSummary = useCallback(async () => {
-    try {
-      await api<{ ok: true }>(`/api/ai/summary/${dateKey}`, { method: 'DELETE' })
-      setSummary(null)
-    } catch (err) {
-      notify('error', err instanceof Error ? err.message : String(err))
-    }
-  }, [dateKey, notify])
 
   const renderItem = (l: HealthLog) => {
     const editing = editId === l.id
     return (
-      <li key={l.id} className="flex items-center gap-2.5 border-b border-base-300 py-2.5">
+      <li key={l.id} className="flex items-center gap-2 border-b border-base-300 py-2 last:border-b-0">
         {l.kind === 'diet' && l.meal && (
           <span className="badge badge-ghost badge-sm flex-none">{MEAL_LABEL[l.meal]}</span>
         )}
-        <span className="min-w-0 flex-1 truncate text-[15px]" title={l.text}>
+        <span className="min-w-0 flex-1 truncate text-sm" title={l.text}>
           {l.text}
         </span>
         {editing ? (
@@ -176,20 +121,10 @@ export function DiaryPanel({
                 if (e.key === 'Escape') setEditId(null)
               }}
             />
-            <button
-              type="button"
-              className="btn btn-ghost btn-xs text-success"
-              onClick={() => void saveEdit()}
-              aria-label="保存热量"
-            >
+            <button type="button" className="btn btn-ghost btn-xs text-success" onClick={() => void saveEdit()} aria-label="保存热量">
               ✓
             </button>
-            <button
-              type="button"
-              className="btn btn-ghost btn-xs"
-              onClick={() => setEditId(null)}
-              aria-label="取消编辑"
-            >
+            <button type="button" className="btn btn-ghost btn-xs" onClick={() => setEditId(null)} aria-label="取消编辑">
               ✕
             </button>
           </span>
@@ -208,7 +143,7 @@ export function DiaryPanel({
                   : '手动值,点击修改(清空=恢复待估)'
             }
           >
-            {l.kcal == null ? '待估' : `${l.kcalSource === 'ai' ? '≈' : ''}${l.kcal} kcal`}
+            {l.kcal == null ? '待估' : `${l.kcalSource === 'ai' ? '≈' : ''}${l.kcal}`}
           </button>
         )}
         <button
@@ -223,27 +158,25 @@ export function DiaryPanel({
     )
   }
 
-  const netNegative = (summary?.netKcal ?? 0) <= 0
-
-  // 合计与录入框始终可见,记录列表 + AI 汇总一起在卡片内滚动(不撑出页面滚动条)
   return (
-    <div className="flex flex-col lg:min-h-0 lg:flex-1">
-      {/* 当日合计 + 快捷入口 */}
-      <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 lg:shrink-0">
-        <span className="font-mono text-xs text-base-content/60">
+    <div>
+      {/* 当日合计 */}
+      <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 font-mono text-xs text-base-content/60">
+        <span>
           摄入 <b className="text-warning">{intakeKcal}</b> kcal
         </span>
-        <span className="font-mono text-xs text-base-content/60">
+        <span>
           运动 <b className="text-accent">{exerciseKcal}</b> kcal
         </span>
-        {missingKcal > 0 && (
-          <span className="font-mono text-xs text-base-content/40">{missingKcal} 条待估</span>
-        )}
+        {missingKcal > 0 && <span className="text-base-content/40">{missingKcal} 条待估</span>}
+        <span className="ml-auto text-base-content/40">
+          {diet.length + exercise.length === 0 ? '还没记录' : `${diet.length} 饮食 · ${exercise.length} 运动`}
+        </span>
       </div>
 
       {/* 快速录入 */}
       <form
-        className="mb-4 lg:shrink-0"
+        className="mb-3"
         onSubmit={e => {
           e.preventDefault()
           void submit()
@@ -288,7 +221,7 @@ export function DiaryPanel({
             aria-label="打卡内容"
           />
           <input
-            className="input input-bordered w-24 text-right tabular-nums"
+            className="input input-bordered w-20 text-right tabular-nums"
             value={kcalDraft}
             onChange={e => setKcalDraft(e.target.value)}
             inputMode="numeric"
@@ -296,121 +229,20 @@ export function DiaryPanel({
             aria-label="热量(可选)"
             title="可选;留空由 AI 汇总时估算"
           />
-          <button type="submit" className="btn btn-primary px-5" disabled={!draft.trim() || busy}>
+          <button type="submit" className="btn btn-primary px-4" disabled={!draft.trim() || busy}>
             记录
           </button>
         </div>
       </form>
 
-      <div className="panel-scroll lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-1">
-        {/* 列表 */}
-        <div className="mb-2 flex items-center gap-3">
-          <h3 className="m-0 font-mono text-[11px] uppercase tracking-[0.08em] text-base-content/45">
-            {diet.length + exercise.length === 0
-              ? '还没记录'
-              : `今日 ${diet.length} 饮食 · ${exercise.length} 运动`}
-          </h3>
-        </div>
-        <ul className="m-0 max-h-[260px] list-none overflow-y-auto p-0 pr-1 lg:max-h-none lg:overflow-visible lg:p-0">
-          {[...diet, ...exercise].map(renderItem)}
-          {logs.length === 0 && (
-            <li className="py-4 text-center text-sm text-base-content/50">
-              还没记吃动;上面的流水也算数,点「生成今日汇总」让 AI 一起看
-            </li>
-          )}
-        </ul>
-
-        {/* AI 汇总 */}
-        <div className="mt-5 rounded-xl border border-base-300 bg-base-200/50 p-4">
-          {generating ? (
-            <div className="flex items-center gap-3 py-2 text-sm text-base-content/60">
-              <span className="loading loading-spinner loading-sm" />
-              AI 正在估算热量并结合档案点评…
-            </div>
-          ) : summary ? (
-            <>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
-                <div>
-                  <div className="font-mono text-[11px] text-base-content/45">摄入</div>
-                  <div className="font-display text-xl font-semibold tabular-nums text-warning">
-                    {summary.intakeKcal}
-                    <small className="ml-0.5 text-xs font-normal text-base-content/45">kcal</small>
-                  </div>
-                </div>
-                <div>
-                  <div className="font-mono text-[11px] text-base-content/45">总消耗</div>
-                  <div className="font-display text-xl font-semibold tabular-nums text-accent">
-                    {summary.burnKcal}
-                    <small className="ml-0.5 text-xs font-normal text-base-content/45">kcal</small>
-                  </div>
-                  <div className="font-mono text-[10px] text-base-content/40">
-                    BMR {summary.bmr} · TDEE {summary.tdee} · 运动 {summary.exerciseKcal}
-                  </div>
-                </div>
-                <div>
-                  <div className="font-mono text-[11px] text-base-content/45">净差</div>
-                  <div
-                    className={`font-display text-xl font-semibold tabular-nums ${
-                      netNegative ? 'text-success' : 'text-error'
-                    }`}
-                  >
-                    {summary.netKcal > 0 ? '+' : ''}
-                    {summary.netKcal}
-                    <small className="ml-0.5 text-xs font-normal text-base-content/45">kcal</small>
-                  </div>
-                  <div className="font-mono text-[10px] text-base-content/40">
-                    {netNegative ? '亏空' : '盈余'} ≈ {(summary.weightDeltaKg * 7).toFixed(2)} kg/周
-                  </div>
-                </div>
-                <div>
-                  <div className="font-mono text-[11px] text-base-content/45">建议摄入</div>
-                  <div className="font-display text-xl font-semibold tabular-nums">
-                    {summary.targetKcal}
-                    <small className="ml-0.5 text-xs font-normal text-base-content/45">kcal</small>
-                  </div>
-                </div>
-              </div>
-
-              {summary.pendingCount > 0 && (
-                <p className="mb-0 mt-3 font-mono text-xs text-warning">
-                  ⚠ {summary.pendingCount} 条未能估算热量,已按 0 计,可点击条目手动补填后重新生成
-                </p>
-              )}
-
-              <p className="mb-0 mt-3 text-sm leading-relaxed whitespace-pre-line">
-                {summary.comment}
-              </p>
-              <div className="mt-3 flex items-center gap-2 border-t border-base-300 pt-2.5">
-                <span className="mr-auto font-mono text-[11px] text-base-content/40">
-                  {summary.model} ·{' '}
-                  {new Date(summary.generatedAt).toLocaleString('zh-CN', {
-                    month: 'numeric',
-                    day: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                  {dateKey === todayKey() ? '' : ' · 历史日'}
-                </span>
-                <button type="button" className="btn btn-ghost btn-xs" onClick={() => void clearSummary()}>
-                  清除
-                </button>
-                <button type="button" className="btn btn-outline btn-xs" onClick={() => void generate()}>
-                  重新生成
-                </button>
-              </div>
-            </>
-          ) : (
-            <div className="flex flex-wrap items-center gap-3">
-              <p className="m-0 flex-1 text-sm text-base-content/55">
-                记完后点右侧按钮:AI 会补齐未填的热量,并结合你的档案(基础代谢/日常消耗)给出今日收支点评。
-              </p>
-              <button type="button" className="btn btn-accent btn-sm" onClick={() => void generate()}>
-                ✨ 生成今日汇总
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
+      <ul className="m-0 list-none p-0">
+        {[...diet, ...exercise].map(renderItem)}
+        {logs.length === 0 && (
+          <li className="py-3 text-center text-sm text-base-content/45">
+            还没记吃动;右侧「AI 汇总」连流水一起看,只记流水也能生成
+          </li>
+        )}
+      </ul>
     </div>
   )
 }

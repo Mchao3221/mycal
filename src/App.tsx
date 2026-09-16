@@ -46,7 +46,7 @@ function Workspace({ onLock }: { onLock: () => void }) {
   const now = todayDate()
   const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() })
   const [selectedKey, setSelectedKey] = useState<string>(() => todayKey())
-  const { getDay: getHealthDay, addLog, patchLog, removeLog, store: healthStore } = useHealth()
+  const { getDay: getHealthDay, addLog, patchLog, removeLog, reload: reloadHealth, store: healthStore } = useHealth()
   const { getDay: getJournalDay, add: addJournal, patch: patchJournal, remove: removeJournal, store: journalStore } = useJournal()
   const { get: getWeight, setFor: setWeight, remove: removeWeight, store: weightStore } = useWeights()
 
@@ -253,6 +253,7 @@ function Workspace({ onLock }: { onLock: () => void }) {
           onDiaryPatch={(id, patch) => patchLog(selectedKey, id, patch)}
           onDiaryRemove={id => removeLog(selectedKey, id)}
           notify={pushToast}
+          onSummaryGenerated={() => void reloadHealth().catch(() => undefined)}
         />
       </main>
 
