@@ -9,7 +9,6 @@ interface Props {
   onClose: () => void
   /** 全量升序体重序列 */
   series: WeightPoint[]
-  onUpsert: (key: string, kg: number) => Promise<void>
   onRemove: (key: string) => Promise<void>
   notify: (kind: 'success' | 'error', text: string) => void
 }
@@ -20,17 +19,13 @@ const RANGES = [
   { days: 0, label: '全部' },
 ]
 
-/** 体重曲线弹窗:7 日均平滑主线 + 原始点 + 目标线 + BMI(中国标准)+ 趋势预估 */
-export function WeightModal({ open, onClose, series, onUpsert, onRemove, notify }: Props) {
+/** 体重曲线弹窗:纯看图与管理;录入只保留右栏「体重」一处(点哪天录哪天,补录同一路径) */
+export function WeightModal({ open, onClose, series, onRemove, notify }: Props) {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [range, setRange] = useState(90)
-  const [draftDate, setDraftDate] = useState(() => todayKey())
-  const [draftKg, setDraftKg] = useState('')
-  const [busy, setBusy] = useState(false)
 
   useEffect(() => {
     if (!open) return
-    setDraftDate(todayKey())
     api<Profile | null>('/api/profile')
       .then(p => setProfile(p))
       .catch(err => console.error('加载档案失败:', err))
@@ -91,25 +86,6 @@ export function WeightModal({ open, onClose, series, onUpsert, onRemove, notify 
   }, [series, profile])
 
   if (!open) return null
-
-  const submit = async () => {
-    if (busy) return
-    const n = Math.round(Number(draftKg) * 10) / 10
-    if (!draftDate || !Number.isFinite(n) || n < 20 || n > 400) {
-      notify('error', '体重需为 20~400 kg,日期必填')
-      return
-    }
-    setBusy(true)
-    try {
-      await onUpsert(draftDate, n)
-      setDraftKg('')
-      notify('success', `已记录 ${draftDate} · ${n.toFixed(1)} kg`)
-    } catch (err) {
-      notify('error', err instanceof Error ? err.message : String(err))
-    } finally {
-      setBusy(false)
-    }
-  }
 
   const recent = series.slice(-10).reverse()
 
@@ -211,41 +187,21 @@ export function WeightModal({ open, onClose, series, onUpsert, onRemove, notify 
             </text>
           </svg>
         ) : (
-          <p className="py-10 text-center text-sm text-base-content/50">还没有体重记录,在下方补录一笔开始积累曲线</p>
+          <p className="py-10 text-center text-sm text-base-content/50">还没有体重记录,在右栏「体重」块记一笔即可开始积累曲线</p>
         )}
         <p className="mt-1 mb-0 text-center font-mono text-[10px] text-base-content/40">
           实线为 7 日均滑(抵消水分/钠造成的日波动),浅点为每日原始值
         </p>
 
-        {/* 补录 + 近期记录 */}
-        <form
-          className="mt-3 flex items-center gap-2 border-t border-base-300 pt-3"
-          onSubmit={e => {
-            e.preventDefault()
-            void submit()
-          }}
-        >
-          <input
-            type="date"
-            className="input input-bordered input-sm w-36"
-            value={draftDate}
-            max={todayKey()}
-            onChange={e => setDraftDate(e.target.value)}
-            aria-label="记录日期"
-          />
-          <input
-            className="input input-bordered input-sm w-24 text-right tabular-nums"
-            value={draftKg}
-            inputMode="decimal"
-            placeholder="kg"
-            onChange={e => setDraftKg(e.target.value)}
-            aria-label="体重"
-          />
-          <button type="submit" className="btn btn-primary btn-sm" disabled={!draftKg.trim() || busy}>
-            {busy ? '保存中…' : '记录/覆盖'}
-          </button>
-          <span className="ml-auto font-mono text-[11px] text-base-content/40">同日提交即覆盖</span>
-        </form>
+        {/* 近期记录管理(录入请回右栏「体重」块,点哪天录哪天) */}
+        <div className="mt-3 flex items-center gap-2 border-t border-base-300 pt-3">
+          <h4 className="m-0 font-mono text-[11px] uppercase tracking-[0.08em] text-base-content/45">
+            近期记录
+          </h4>
+          <span className="ml-auto font-mono text-[11px] text-base-content/40">
+            补录/修改:在日历选中那天,用右栏录入(同日覆盖)
+          </span>
+        </div>
         {recent.length > 0 && (
           <ul className="m-0 mt-2 max-h-40 list-none space-y-0 overflow-y-auto p-0 font-mono text-xs">
             {recent.map(p => (

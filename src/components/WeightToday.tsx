@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { todayKey } from '../utils/date'
 import type { WeightEntry } from '../types'
 
 interface Props {
@@ -40,10 +41,14 @@ export function WeightToday({ dateKey, entry, avg7, onSave, onClear, notify }: P
   const delta =
     entry && avg7 != null ? Math.round((entry.weightKg - avg7) * 10) / 10 : null
 
+  // 跟随日历所选日期:选今天显示"今日",选别天显示具体日期(补录同一路径)
+  const [, cm, cd] = dateKey.split('-')
+  const label = dateKey === todayKey() ? '⚖️ 今日体重' : `⚖️ ${Number(cm)} 月 ${Number(cd)} 日体重`
+
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
       <span className="m-0 font-mono text-[11px] uppercase tracking-[0.08em] text-base-content/45">
-        ⚖️ 今日体重
+        {label}
       </span>
       <div className="flex items-center gap-2">
         <div className="join">

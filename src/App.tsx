@@ -262,9 +262,6 @@ function Workspace({ onLock }: { onLock: () => void }) {
         open={weightOpen}
         onClose={() => setWeightOpen(false)}
         series={wSeries}
-        onUpsert={async (key, kg) => {
-          await setWeight(key, kg)
-        }}
         onRemove={async key => {
           await removeWeight(key)
         }}

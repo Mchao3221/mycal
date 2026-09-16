@@ -165,7 +165,7 @@ export function ProfileModal({ open, onClose, notify }: Props) {
               <b className="ml-2 text-sm tabular-nums text-base-content">
                 {derivedWeight != null ? `${derivedWeight.toFixed(1)} kg` : '未记录'}
               </b>
-              <span className="ml-2 text-base-content/45">以体重记录为准,在右侧「今日体重」或曲线里记</span>
+              <span className="ml-2 text-base-content/45">以体重记录为准,在右栏「体重」块录入</span>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <label className="form-control">
