@@ -121,7 +121,7 @@ export function WeightModal({ open, onClose, series, onRemove, notify }: Props) 
             <span>
               BMI <b className={`text-sm tabular-nums ${bmiBand(stats.bmiVal).cls}`}>{stats.bmiVal}</b>{' '}
               <span className={bmiBand(stats.bmiVal).cls}>{bmiBand(stats.bmiVal).label}</span>
-              <span className="text-base-content/35">(中国标准 24/28 切)</span>
+              <span className="text-base-content/35">(中国标准:≥24 超重 · ≥28 肥胖)</span>
             </span>
           )}
           {stats.target != null && stats.latest && (
