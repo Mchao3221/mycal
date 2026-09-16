@@ -118,7 +118,7 @@ CREATE TABLE auth_sessions (      -- 会话:只存 token 的 SHA-256,「上锁�
 
 ### 访问码锁设计(worker/lock.ts)
 
-1. 访问码 → `PBKDF2-SHA256(15 万迭代, 随机 16B salt)` 存 `settings`;明文不落库不落日志;未设置前接口放行(bootstrap),`setup` 仅可调一次;
+1. 访问码 → `PBKDF2-SHA256(10 万迭代——workerd 硬上限,勿调高;随机 16B salt)` 存 `settings`;明文不落库不落日志;未设置前接口放行(bootstrap),`setup` 仅可调一次;
 2. 解锁成功签发 256bit 随机 token,库中只存其 SHA-256;`Set-Cookie: mycal_session=…; HttpOnly; SameSite=Lax; Path=/; Max-Age=604800`(https 下才加 `Secure`);
 3. 会话 7 天,打开应用时剩余不足 3 天滑动续期;最多 5 台设备并存,超出淘汰最旧;「上锁」清空全表 → 旧 cookie 即刻作废(无状态签名 token 做不到,这是选有状态的原因);
 4. 防爆破:`settings.lock.fails` 记连续失败,≥5 次起指数退避冷却(15s×2^n,封顶 5 分钟),429 返回中文剩余秒数;

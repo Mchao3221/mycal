@@ -24,7 +24,8 @@ const COOKIE_NAME = 'mycal_session'
 const SESSION_TTL_MS = 7 * 24 * 3600_000 // 记住 7 天
 const REFRESH_THRESHOLD_MS = 3 * 24 * 3600_000 // 剩余不足 3 天时续期
 const MAX_SESSIONS = 5
-const PBKDF2_ITERATIONS = 150_000
+// 注意:workerd(Cloudflare Workers 运行时)拒绝 >100000 的 PBKDF2 迭代数,勿再调高
+const PBKDF2_ITERATIONS = 100_000
 const SALT_BYTES = 16
 
 /** 防爆破:settings.lock.fails 存 { count, until },连续失败 ≥5 次后指数退避 */
