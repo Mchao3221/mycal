@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { DocTree } from './components/DocTree'
 import { LockScreen } from './components/LockScreen'
 import { ReaderPane } from './components/ReaderPane'
@@ -6,6 +6,7 @@ import { useDocContent, useDocsTree } from './hooks/useDocs'
 import { navigateToDoc, useDocRoute } from './hooks/useDocRoute'
 import { useSidebarWidth } from './hooks/useSidebarWidth'
 import { api } from './utils/api'
+import { isTextKind, rawUrl } from './utils/fileKind'
 import { ancestorsOf, baseNameOf, buildTree, collectDirPaths } from './utils/tree'
 import { loadJson, loadString, saveJson, saveString } from './utils/storage'
 import type { LockStatus } from './types'
@@ -57,12 +58,16 @@ function Workspace({ onLocked }: { onLocked: () => void }) {
   const root = useMemo(() => (tree ? buildTree(tree.files) : null), [tree])
   const knownPaths = useMemo(() => new Set(tree?.files.map(f => f.path) ?? []), [tree])
   const sizeOf = useMemo(() => new Map(tree?.files.map(f => [f.path, f.size]) ?? []), [tree])
+  // 路径 → blob sha。前端本来就已经握有整棵树,把它捎给 worker 就能省掉
+  // 「为了把路径换成 sha 而重新拉一遍文件树」这两个上游请求。
+  const shaOf = useMemo(() => new Map(tree?.files.map(f => [f.path, f.sha]) ?? []), [tree])
   const allDirs = useMemo(() => (root ? collectDirPaths(root) : []), [root])
 
   // 当前文件必须是真实存在的路径:手工改地址栏、或文件在仓库里被删掉之后,
   // 不能让阅读区拿着一个不存在的路径去请求
   const currentPath = routePath && knownPaths.has(routePath) ? routePath : null
-  const content = useDocContent(currentPath)
+  const currentSha = currentPath ? shaOf.get(currentPath) : undefined
+  const content = useDocContent(currentPath, currentSha)
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -96,6 +101,35 @@ function Workspace({ onLocked }: { onLocked: () => void }) {
       return next
     })
   }, [])
+
+  /**
+   * 悬停预热。
+   *
+   * 打开文件慢的根因在 Cloudflare 到 Gitee 那一段,但"感知速度"可以在前端补:
+   * 鼠标停在某个文件上就先把内容取回来塞进浏览器缓存(响应头是 private, max-age=300),
+   * 真正点开时通常就是零请求。150ms 防抖,避免鼠标扫过目录树时打出一串请求。
+   */
+  const prefetchTimer = useRef<number | null>(null)
+  const prefetch = useCallback(
+    (target: string) => {
+      if (!isTextKind(target)) return
+      if (prefetchTimer.current !== null) window.clearTimeout(prefetchTimer.current)
+      prefetchTimer.current = window.setTimeout(() => {
+        const url = rawUrl(target, shaOf.get(target))
+        // 必须把 body 读掉,否则浏览器可能中断下载,缓存里什么都没有
+        void fetch(url)
+          .then(res => res.text())
+          .catch(() => undefined)
+      }, 150)
+    },
+    [shaOf],
+  )
+  useEffect(
+    () => () => {
+      if (prefetchTimer.current !== null) window.clearTimeout(prefetchTimer.current)
+    },
+    [],
+  )
 
   const lockNow = async () => {
     try {
@@ -221,6 +255,7 @@ function Workspace({ onLocked }: { onLocked: () => void }) {
               expanded={expanded}
               onToggle={toggleDir}
               onSelect={navigateToDoc}
+              onHover={prefetch}
             />
           </div>
 
@@ -259,6 +294,7 @@ function Workspace({ onLocked }: { onLocked: () => void }) {
           <ReaderPane
             path={currentPath}
             size={currentPath ? (sizeOf.get(currentPath) ?? 0) : 0}
+            sha={currentSha}
             content={content}
             knownPaths={knownPaths}
           />

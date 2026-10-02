@@ -45,8 +45,13 @@ export function isTextKind(path: string): boolean {
   return kind === 'markdown' || kind === 'code'
 }
 
-/** 文件在仓库内的路径 → worker 代理 URL */
-export const rawUrl = (path: string): string => `/api/docs/raw?path=${encodeURIComponent(path)}`
+/**
+ * 文件在仓库内的路径 → worker 代理 URL。
+ * sha 可选但很有用:带上它,worker 就能直接走 git/blobs 取内容,
+ * 不必为了"把路径换成 sha"再拉一次完整文件树(那是两个上游请求)。
+ */
+export const rawUrl = (path: string, sha?: string): string =>
+  `/api/docs/raw?path=${encodeURIComponent(path)}${sha ? `&sha=${sha}` : ''}`
 
 /** 人类可读的字节数 */
 export function formatSize(bytes: number): string {
@@ -55,18 +60,40 @@ export function formatSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
-/** 左侧目录树用的字符图标(不引图标库,和项目「手写 SVG/不引库」的风格一致) */
+/**
+ * 左侧目录树用的文件标记。
+ *
+ * 刻意不引图标库(和项目"手写 SVG/不引库"的风格一致),但**必须一眼能分辨类型**:
+ * 早先用的是 9px 灰色单字符,用户反馈"不够明显"。现在改成
+ * 「按类型着色 + 稍大字号 + 固定宽度列」——颜色比形状在密集列表里更好扫。
+ */
 export function iconOf(path: string): string {
   switch (kindOf(path)) {
     case 'markdown':
       return 'M'
     case 'code':
-      return extOf(path) === 'sql' ? 'S' : '<>'
+      return extOf(path) === 'sql' ? 'S' : '{}'
     case 'image':
       return '▣'
     case 'epub':
       return 'B'
     default:
       return '·'
+  }
+}
+
+/** 文件标记的配色:SQL 是仓库绝对主力,单独给一个醒目的颜色 */
+export function iconToneOf(path: string): string {
+  switch (kindOf(path)) {
+    case 'markdown':
+      return 'text-primary'
+    case 'code':
+      return extOf(path) === 'sql' ? 'text-accent' : 'text-base-content/45'
+    case 'image':
+      return 'text-secondary'
+    case 'epub':
+      return 'text-warning'
+    default:
+      return 'text-base-content/30'
   }
 }

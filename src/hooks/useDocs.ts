@@ -46,7 +46,7 @@ export type DocContent =
   | { status: 'error'; message: string }
   | { status: 'ready'; text: string }
 
-export function useDocContent(path: string | null): DocContent {
+export function useDocContent(path: string | null, sha?: string): DocContent {
   const [state, setState] = useState<DocContent>({ status: 'idle' })
 
   useEffect(() => {
@@ -56,7 +56,7 @@ export function useDocContent(path: string | null): DocContent {
     }
     let alive = true
     setState({ status: 'loading' })
-    fetchText(rawUrl(path))
+    fetchText(rawUrl(path, sha))
       .then(text => {
         if (alive) setState({ status: 'ready', text })
       })
@@ -67,7 +67,7 @@ export function useDocContent(path: string | null): DocContent {
       // 快速连点目录时,晚到的响应不能覆盖新文件的内容
       alive = false
     }
-  }, [path])
+  }, [path, sha])
 
   return state
 }

@@ -4,13 +4,14 @@ import { formatSize, rawUrl } from '../utils/fileKind'
 interface Props {
   path: string
   size: number
+  sha?: string
 }
 
 /** 图片直接显示;提供「适应宽度 / 原始尺寸」切换,大截图默认适应宽度更好看 */
-export function ImageView({ path, size }: Props) {
+export function ImageView({ path, size, sha }: Props) {
   const [failed, setFailed] = useState(false)
   const [actualSize, setActualSize] = useState(false)
-  const url = rawUrl(path)
+  const url = rawUrl(path, sha)
   const name = path.split('/').pop() ?? path
 
   return (

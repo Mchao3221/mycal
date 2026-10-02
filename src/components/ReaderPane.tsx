@@ -18,6 +18,8 @@ interface Props {
   /** null = 还没选文件 */
   path: string | null
   size: number
+  /** 该文件的 blob sha:带上它 worker 就能直接按内容寻址取,省掉两次上游请求 */
+  sha?: string
   /** 文本类文件的正文;二进制类型用不上 */
   content: DocContent
   knownPaths: Set<string>
@@ -25,9 +27,9 @@ interface Props {
 
 /**
  * 阅读区:按文件类型分发到对应视图。
- * 同时用 ResizeObserver 量出可用尺寸给 epub / excalidraw 这类需要确定宽高的第三方渲染器。
+ * 同时用 ResizeObserver 量出可用尺寸给 epub 这类需要确定宽高的第三方渲染器。
  */
-export function ReaderPane({ path, size, content, knownPaths }: Props) {
+export function ReaderPane({ path, size, sha, content, knownPaths }: Props) {
   const boxRef = useRef<HTMLDivElement>(null)
   const [box, setBox] = useState({ width: 0, height: 0 })
 
@@ -58,14 +60,22 @@ export function ReaderPane({ path, size, content, knownPaths }: Props) {
   return (
     <div ref={boxRef} className="h-full min-h-0">
       {kind === 'markdown' && (
-        <TextView content={content} render={text => <MarkdownView path={path} text={text} size={size} knownPaths={knownPaths} />} />
+        <TextView
+          content={content}
+          render={text => <MarkdownView path={path} text={text} size={size} sha={sha} knownPaths={knownPaths} />}
+        />
       )}
-      {kind === 'code' && <TextView content={content} render={text => <CodeView path={path} text={text} />} />}
-      {kind === 'image' && <ImageView path={path} size={size} />}
-      {kind === 'external' && <ExternalView path={path} size={size} />}
+      {kind === 'code' && <TextView content={content} render={text => <CodeView path={path} text={text} sha={sha} />} />}
+      {kind === 'image' && <ImageView path={path} size={size} sha={sha} />}
+      {kind === 'external' && <ExternalView path={path} size={size} sha={sha} />}
       {kind === 'epub' && (
         <Suspense fallback={<Loading label="正在加载电子书阅读器…" />}>
-          <EpubView src={rawUrl(path)} title={path.split('/').pop() ?? path} width={box.width} height={box.height} />
+          <EpubView
+            src={rawUrl(path, sha)}
+            title={path.split('/').pop() ?? path}
+            width={box.width}
+            height={box.height}
+          />
         </Suspense>
       )}
     </div>

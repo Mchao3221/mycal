@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { renderMarkdown } from '../utils/markdown'
-import { formatSize } from '../utils/fileKind'
+import { formatSize, rawUrl } from '../utils/fileKind'
 import { hydrateMermaidBlocks, refitMermaidBlocks } from '../utils/mermaid'
 import { navigateToDoc } from '../hooks/useDocRoute'
 
@@ -9,6 +9,8 @@ interface Props {
   path: string
   text: string
   size: number
+  /** blob sha:只用于「源码」链接 */
+  sha?: string
   /** 全部文件路径,交给渲染器解析 [[wikilink]] */
   knownPaths: Set<string>
 }
@@ -17,7 +19,7 @@ interface Props {
  * Markdown 阅读视图。
  * 正文是 renderMarkdown 产出的**已消毒** HTML,这里只负责容器、大纲与内部跳转拦截。
  */
-export function MarkdownView({ path, text, size, knownPaths }: Props) {
+export function MarkdownView({ path, text, size, sha, knownPaths }: Props) {
   const doc = useMemo(() => renderMarkdown(text, { docPath: path, knownPaths }), [text, path, knownPaths])
   const bodyRef = useRef<HTMLDivElement>(null)
   const [outlineOpen, setOutlineOpen] = useState(false)
@@ -161,7 +163,7 @@ export function MarkdownView({ path, text, size, knownPaths }: Props) {
             )}
           </div>
         )}
-        <a className="btn btn-ghost btn-xs shrink-0" href={`/api/docs/raw?path=${encodeURIComponent(path)}`} target="_blank" rel="noopener noreferrer">
+        <a className="btn btn-ghost btn-xs shrink-0" href={rawUrl(path, sha)} target="_blank" rel="noopener noreferrer">
           源码
         </a>
       </div>

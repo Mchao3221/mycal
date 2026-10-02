@@ -4,6 +4,7 @@ import { extOf, formatSize, rawUrl } from '../utils/fileKind'
 interface Props {
   path: string
   size: number
+  sha?: string
 }
 
 /**
@@ -12,9 +13,9 @@ interface Props {
  * 之所以要用按钮(而不是选中文件就自动 window.open):浏览器只认「用户手势」触发的弹窗,
  * 由状态更新后的 effect 去开会直接被拦截,所以必须留一个真实的点击动作。
  */
-export function ExternalView({ path, size }: Props) {
+export function ExternalView({ path, size, sha }: Props) {
   const [copied, setCopied] = useState(false)
-  const url = rawUrl(path)
+  const url = rawUrl(path, sha)
   const name = path.split('/').pop() ?? path
   const dir = path.split('/').slice(0, -1).join('/')
 

@@ -1,10 +1,13 @@
 import { useMemo } from 'react'
 import { highlightCode, languageOf } from '../utils/highlight'
+import { rawUrl } from '../utils/fileKind'
 
 interface Props {
   /** 仓库内路径,用于推断语言 */
   path: string
   text: string
+  /** blob sha:只用于「新窗口打开」的链接,带上可省掉 worker 侧的两次上游请求 */
+  sha?: string
 }
 
 /** 超过这个体积就不再着色:600KB 的导出脚本交给 hljs 会卡住主线程一秒以上 */
@@ -16,7 +19,7 @@ const HIGHLIGHT_SIZE_GUARD = 400_000
  * 行号不靠切分高亮后的 HTML(hljs 会产出跨行的 span,切开就破坏了标记),
  * 而是用一个并行的高度对齐的 gutter 承载,两列共享同一套行高(--code-line-height)。
  */
-export function CodeView({ path, text }: Props) {
+export function CodeView({ path, text, sha }: Props) {
   // 注意:必须用 languageOf(扩展名 → hljs 语言名),不能直接把扩展名当语言名传进去,
   // 否则 .ts / .yml 这些「扩展名与语言名不同」的文件会被静默降级成纯文本。
   const lang = languageOf(path)
@@ -44,7 +47,7 @@ export function CodeView({ path, text }: Props) {
         )}
         <a
           className="btn btn-ghost btn-xs ml-auto"
-          href={`/api/docs/raw?path=${encodeURIComponent(path)}`}
+          href={rawUrl(path, sha)}
           target="_blank"
           rel="noopener noreferrer"
         >

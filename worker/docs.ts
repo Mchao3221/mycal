@@ -22,6 +22,19 @@ const DEFAULT_BRANCH = 'master'
 /** 文档仓库按小时级更新(Obsidian Git 自动备份),分钟级缓存足够,同时给手动刷新留出口 */
 const TREE_TTL_SEC = 60
 const FILE_TTL_SEC = 300
+/** 内容寻址(带 sha)的响应可以长缓存:内容变了 sha 就变了,URL 也就变了 */
+const IMMUTABLE_TTL_SEC = 31536000
+
+/**
+ * 单个上游请求的超时。
+ *
+ * 这个值不是拍脑袋来的:线上曾出现「打开一个 30K 的文件要几分钟」,而本地实测取数 10ms、
+ * 渲染 <1ms —— 说明耗时全在 Cloudflare 到 Gitee 这一段。回退链在失败时最多要打 5 个上游请求
+ * (contents → branches → trees → blobs → raw),每个都挂住的话就是几分钟。
+ * 有了这个上限,最坏情况也是有界的,而且超时会作为「fetch 异常」写进诊断,
+ * 一眼就能和「上游返回 4xx」区分开。
+ */
+const UPSTREAM_TIMEOUT_MS = 8000
 
 interface RepoConf {
   owner: string
@@ -125,6 +138,10 @@ interface Diag {
 }
 
 let diags: Diag[] = []
+/** 本次请求里是否出现过「连不上」类错误(超时/DNS/TLS)。
+ *  一旦出现就没必要再试后面的回退了 —— 那是整条链路不通,不是某一个接口的问题。
+ *  没有这一条,卡住一次会变成卡住五次,用户看到的就是"转几分钟"。 */
+let networkDown = false
 
 function snippet(text: string, max = 200): string {
   const flat = text.replace(/\s+/g, ' ').trim()
@@ -135,30 +152,43 @@ function diagText(): string {
   return diags.length === 0 ? '无上游记录' : diags.map(d => `${d.step}=${d.status}${d.body ? `(${d.body})` : ''}`).join(' / ')
 }
 
-/** 带诊断的上游请求:网络异常也要记下来,否则会被外层当成 500 内部错误,掩盖真实原因 */
-async function requestJson(url: string, step: string): Promise<Response | null> {
+/** 带上限的上游请求;返回 null 表示这次尝试失败(原因已记入 diags) */
+async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response | null> {
+  const ac = new AbortController()
+  const timer = setTimeout(() => ac.abort(), UPSTREAM_TIMEOUT_MS)
   try {
-    const res = await fetch(url, {
-      headers: { Accept: 'application/json', 'User-Agent': 'mycal-reader' },
-      cf: { cacheEverything: true, cacheTtl: TREE_TTL_SEC },
-    })
-    if (!res.ok) {
-      let body = ''
-      try {
-        body = snippet(await res.text())
-      } catch {
-        /* 读不到就算了,状态码本身已经够用 */
-      }
-      diags.push({ step, status: res.status, body })
-      return null
-    }
-    return res
+    return await fetch(url, { ...init, signal: ac.signal })
   } catch (err) {
-    // 「fetch 抛异常」意味着连不上 / DNS / TLS 被拦,和「上游返回 4xx」是两回事,
-    // 必须分开报,否则会把网络问题误判成权限问题。
-    diags.push({ step, status: 'fetch 异常', body: err instanceof Error ? err.message : String(err) })
+    networkDown = true
+    diags.push({
+      step: 'fetch',
+      status: ac.signal.aborted ? `超时 ${UPSTREAM_TIMEOUT_MS}ms` : 'fetch 异常',
+      body: err instanceof Error ? err.message : String(err),
+    })
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/** 带诊断的上游 JSON 请求 */
+async function requestJson(url: string, step: string): Promise<Response | null> {
+  const res = await fetchWithTimeout(url, {
+    headers: { Accept: 'application/json', 'User-Agent': 'mycal-reader' },
+    cf: { cacheEverything: true, cacheTtl: TREE_TTL_SEC },
+  })
+  if (!res) return null
+  if (!res.ok) {
+    let body = ''
+    try {
+      body = snippet(await res.text())
+    } catch {
+      /* 读不到就算了,状态码本身已经够用 */
+    }
+    diags.push({ step, status: res.status, body })
     return null
   }
+  return res
 }
 
 /** 拿文件树;fresh 为 true 时用一次性查询参数绕开边缘缓存 */
@@ -193,21 +223,25 @@ async function resolveCommitSha(conf: RepoConf, fresh: boolean): Promise<string 
 export async function fetchTree(env: Env, fresh = false): Promise<DocsTree> {
   const conf = confOf(env)
   diags = []
+  networkDown = false
 
   // 用分支接口换 commit sha:它比分支名精确(内容变了 sha 就变),可以安全地长缓存。
   // 换不到就退回分支名当 ref,并且两个 ref 都试一遍 —— 少一次「云端 502 只能靠猜」。
   const commitSha = await resolveCommitSha(conf, fresh)
-  const ref = commitSha ?? conf.branch
 
-  let data = await requestTree(conf, ref, fresh)
-  if (!data && commitSha !== null) data = await requestTree(conf, conf.branch, fresh)
+  // 连不上就收手:再试第二个 ref 只会把「卡一次」放大成「卡两次」,用户感知到的就是转圈
+  let data = networkDown ? null : await requestTree(conf, commitSha ?? conf.branch, fresh)
+  if (!networkDown && !data && commitSha !== null) data = await requestTree(conf, conf.branch, fresh)
   if (!data) {
     throw new HttpError(
       502,
       `Gitee 文件树获取失败:仓库 ${conf.owner}/${conf.repo}、分支 ${conf.branch}。` +
         `上游记录 → ${diagText()}。` +
-        `排查提示:出现「fetch 异常」或 403,通常是 Gitee 拒绝了 Cloudflare 的出口 IP 或触发风控;` +
-        `出现 401,则是 GITEE_TOKEN 无效;出现 404,则是仓库名或令牌的仓库授权范围不对。`,
+        (networkDown
+          ? `这是 Worker 到 Gitee 的连接不通(超时/被拦/DNS),不是令牌问题。` +
+            `持续出现的话需要改用「把仓库同步到 Cloudflare 存储」的方案,不再依赖实时回源。`
+          : `排查提示:出现 403 通常是 Gitee 拒绝了 Cloudflare 的出口 IP 或触发风控;` +
+            `出现 401 则是 GITEE_TOKEN 无效;出现 404 则是仓库名或令牌的仓库授权范围不对。`),
     )
   }
 
@@ -322,16 +356,33 @@ function contentDisposition(path: string): string {
   return `inline; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`
 }
 
-function fileResponse(body: BodyInit, path: string, bytes?: Uint8Array): Response {
+/**
+ * immutable=true 用于走 git/blobs 拿到的内容:那是内容寻址的,sha 不变内容就一定不变,
+ * 所以同一条 URL(带 sha)可以放心长期缓存 —— 再次打开同一个文件就是浏览器缓存命中,零请求。
+ * 走 contents 的内容是路径寻址的(可能被改),只能用短缓存。
+ */
+function fileResponse(body: BodyInit, path: string, bytes?: Uint8Array, immutable = false): Response {
   return new Response(body, {
     status: 200,
     headers: {
       'Content-Type': contentTypeFor(path, bytes),
       'Content-Disposition': contentDisposition(path),
-      'Cache-Control': `private, max-age=${FILE_TTL_SEC}, stale-while-revalidate=86400`,
+      'Cache-Control': immutable
+        ? `private, max-age=${IMMUTABLE_TTL_SEC}, immutable`
+        : `private, max-age=${FILE_TTL_SEC}, stale-while-revalidate=86400`,
       'X-Content-Type-Options': 'nosniff',
     },
   })
+}
+
+/** 整条链路连不上时的统一报错:带上诊断,并明确告诉用户这是网络问题而不是权限问题 */
+function unreachable(path: string): HttpError {
+  return new HttpError(
+    502,
+    `读取文件失败:${path}。上游记录 → ${diagText()}。` +
+      `这说明 Worker 到 Gitee 的连接不通(超时/被拦/DNS),而不是文件不存在或权限不足。` +
+      `若是持续出现,需要改用「把仓库同步到 Cloudflare 存储」的方案,不再依赖实时回源。`,
+  )
 }
 
 function base64ToBytes(b64: string): Uint8Array {
@@ -367,13 +418,10 @@ interface Attempt {
  *     仓库里确实有 0 字节的文件,按失败处理会让它永远打不开。
  */
 async function tryBase64Json(url: string, status: Attempt, step: string): Promise<Uint8Array | null> {
-  let res: Response
-  try {
-    res = await fetch(url, { headers: { Accept: 'application/json', 'User-Agent': 'mycal-reader' } })
-  } catch (err) {
-    diags.push({ step, status: 'fetch 异常', body: err instanceof Error ? err.message : String(err) })
-    return null
-  }
+  const res = await fetchWithTimeout(url, {
+    headers: { Accept: 'application/json', 'User-Agent': 'mycal-reader' },
+  })
+  if (!res) return null
   status.code = res.status
   if (!res.ok) {
     if (res.status === 404) status.notFound = true
@@ -416,10 +464,15 @@ async function tryBase64Json(url: string, status: Attempt, step: string): Promis
  *     天然可长缓存),且绝无转码风险,字节必须和仓库一模一样。
  *
  * 两者都失败时退到 raw 直链(实测 Gitee 对私有仓库一律 403,只留给公开仓库)。
+ *
+ * `shaHint` 由前端从文件树里带过来。这一条对性能影响很大:没有它,走 blobs 就必须先
+ * 拉一次完整文件树(还是 branches + trees 两个请求)才能把路径换成 sha;有了它,
+ * 打开一个文件最多就一次上游请求。前端本来就已经持有整棵树,不用白不用。
  */
-export async function fetchFile(env: Env, path: string): Promise<Response> {
+export async function fetchFile(env: Env, path: string, shaHint?: string): Promise<Response> {
   const conf = confOf(env)
   diags = []
+  networkDown = false
   const encoded = encodePath(path)
   const token = encodeURIComponent(conf.token)
   const ref = encodeURIComponent(conf.branch)
@@ -429,12 +482,15 @@ export async function fetchFile(env: Env, path: string): Promise<Response> {
   const isText = TEXT_EXT.has(extOf(path))
   const contentsStatus: Attempt = { code: 0, notFound: false }
   const blobStatus: Attempt = { code: 0, notFound: false }
-  let sha: string | null = null
 
+  // 只接受 40 位十六进制的 sha:前端传来的是客户端数据,不能直接拼进 URL
+  const sha = shaHint && /^[0-9a-f]{40}$/i.test(shaHint) ? shaHint : null
+
+  /** 走 blobs 取内容;有 shaHint 就直接用,否则才去拉一次文件树换 sha */
   const tryBlobs = async (): Promise<Uint8Array | null> => {
-    sha = await blobShaOf(env, path)
-    if (!sha) return null
-    return tryBase64Json(`${repoBase}/git/blobs/${encodeURIComponent(sha)}?access_token=${token}`, blobStatus, 'blobs')
+    const realSha = sha ?? (await blobShaOf(env, path))
+    if (!realSha) return null
+    return tryBase64Json(`${repoBase}/git/blobs/${encodeURIComponent(realSha)}?access_token=${token}`, blobStatus, 'blobs')
   }
 
   // 注意用 !== null 而不是真值判断:0 字节文件的合法结果就是一个空的 Uint8Array,
@@ -442,32 +498,32 @@ export async function fetchFile(env: Env, path: string): Promise<Response> {
   if (isText) {
     const bytes = await tryBase64Json(contentsUrl, contentsStatus, 'contents')
     if (bytes !== null) return fileResponse(bytes, path, bytes)
+    // 整条链路连不上时立刻收手:接着试 blobs / raw 只会再挂两次,把"慢"变成"更慢"
+    if (networkDown) throw unreachable(path)
     const raw = await tryBlobs()
     // 这里拿到的可能是 GBK 原始字节,fileResponse 会据此写对 charset
     if (raw !== null) return fileResponse(raw, path, raw)
   } else {
     const fromBlob = await tryBlobs()
-    if (fromBlob !== null) return fileResponse(fromBlob, path)
+    if (fromBlob !== null) return fileResponse(fromBlob, path, undefined, true)
+    if (networkDown) throw unreachable(path)
     const bytes = await tryBase64Json(contentsUrl, contentsStatus, 'contents')
     if (bytes !== null) return fileResponse(bytes, path)
   }
 
   // 兜底:raw 直链(实测对私有仓库一律 403,只对公开仓库有意义)。
   // 这里不能用 requestJson:它会带 Accept: application/json,而 raw 返回的是文件原文/二进制。
-  const rawUrl = `${WEB_BASE}/${conf.owner}/${conf.repo}/raw/${ref}/${encoded}?access_token=${token}`
-  try {
-    const rawRes = await fetch(rawUrl, {
+  if (!networkDown) {
+    const rawUrl = `${WEB_BASE}/${conf.owner}/${conf.repo}/raw/${ref}/${encoded}?access_token=${token}`
+    const rawRes = await fetchWithTimeout(rawUrl, {
       headers: { 'User-Agent': 'mycal-reader' },
       cf: { cacheEverything: true, cacheTtl: FILE_TTL_SEC },
     })
-    if (rawRes.ok && rawRes.body) return fileResponse(rawRes.body, path)
-    diags.push({ step: 'raw', status: rawRes.status })
-    if (rawRes.status === 404) {
-      throw new HttpError(404, `文件不存在:${path}`)
+    if (rawRes?.ok && rawRes.body) return fileResponse(rawRes.body, path)
+    if (rawRes) {
+      diags.push({ step: 'raw', status: rawRes.status })
+      if (rawRes.status === 404) throw new HttpError(404, `文件不存在:${path}`)
     }
-  } catch (err) {
-    if (err instanceof HttpError) throw err
-    diags.push({ step: 'raw', status: 'fetch 异常', body: err instanceof Error ? err.message : String(err) })
   }
 
   if (contentsStatus.notFound || blobStatus.notFound) {

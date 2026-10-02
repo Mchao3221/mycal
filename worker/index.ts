@@ -75,8 +75,11 @@ async function route(req: Request, env: Env, path: string, method: string): Prom
   }
 
   if (path === '/api/docs/raw' && method === 'GET') {
-    const file = normPath(new URL(req.url).searchParams.get('path'))
-    return await fetchFile(env, file)
+    const params = new URL(req.url).searchParams
+    const file = normPath(params.get('path'))
+    // sha 由前端从文件树里带过来:有它就不必为了"路径换 sha"再拉一次完整文件树,
+    // 打开一个文件最多只剩一次上游请求。sha 的格式校验在 fetchFile 里做。
+    return await fetchFile(env, file, params.get('sha') ?? undefined)
   }
 
   throw new HttpError(404, '接口不存在')
