@@ -1,8 +1,9 @@
 # MyDocs — 只读文档阅读器
 
-左边目录树,右边阅读区。内容实时来自 Gitee 私有仓库 [`chu-tianshu/my-docs`](https://gitee.com/chu-tianshu/my-docs),**只读不改** —— 这个应用永远不写仓库、不提交、不改任何文件,写作仍然在 Obsidian 里做,这里只负责舒服地读。
+左边目录树,右边阅读区。内容来自 Gitee 私有仓库 [`chu-tianshu/my-docs`](https://gitee.com/chu-tianshu/my-docs),**只读不改** —— 这个应用永远不写仓库、不提交、不改任何文件,写作仍然在 Obsidian 里做,这里只负责舒服地读。
 
 > v0.5.0 由「私人 AI 健康日志 MyCal」整体重构而来,健康日志相关代码与数据表已全部退役。
+> v0.6.2 起内容由本机 `pnpm run sync` 推送到 Cloudflare,阅读只读云端副本。
 
 ## 能读什么
 
@@ -18,13 +19,21 @@
 
 **只读,而且是真只读。** 阅读侧只有两个接口:`GET /api/docs/tree`(文件清单)和 `GET /api/docs/raw?path=`(单个文件)。没有编辑、没有删除、没有任何回写仓库的路径。
 
-**先把仓库同步进 Cloudflare,之后只读本地副本。** 早期版本是每次打开文件都实时代理 Gitee,结果把「Cloudflare 到 Gitee 的链路质量」直接变成了阅读体验 —— 链路一慢,整站都慢。现在点右上角「刷新」触发一次同步(把仓库搬进 D1),之后打开文件完全不碰 Gitee,快且稳定。
+**先同步到 Cloudflare,之后只读云端副本。** 内容不是实时拉取的:`pnpm run sync` 把你本机的文档目录推送到 Cloudflare D1,阅读时只读这份副本,快且稳定,也完全不依赖任何外部服务。
 
-**增量同步,而且是零写入的那种。** 内容按 git blob 的 sha **内容寻址**存储:内容没变就不写任何东西。实测 789 个文件里只有 766 个唯一 sha(有 23 个文件内容完全相同,自动去重),而同步过一次之后再点刷新是「入库 0 个文件」。中断了重来也是续传。
+**为什么同步要从本机发起(而不是让服务端去 Gitee 取)。** 三条网络路径都实测过,没有一条可靠:
 
-**令牌不下发到浏览器。** 仓库是私有的,匿名访问一律 404,必须带 Gitee 访问令牌。令牌只存在 Worker 侧(本地 `.dev.vars` / 生产 `wrangler secret`),同步时由 Worker 去取内容,浏览器从头到尾接触不到它。而且**读路径完全不需要令牌** —— 同步过一次之后,哪怕令牌失效,已经同步的内容照样能读。
+| 取数方 | 结果 |
+|---|---|
+| Cloudflare Worker → gitee.com | **fetch 超时**(网络根本不通) |
+| 浏览器 fetch → gitee.com | **403**(Gitee 的 WAF 拦浏览器) |
+| 本机 Node 连续请求 → gitee.com | 前 150 个成功,**之后被风控限流成 403** |
 
-**中文编码不会乱码。** 这个仓库里 2022 年前后的一批 SQL 是 GBK 编码的。Gitee 的 `contents` 接口会顺手把它们规整成 UTF-8,而 `git/blobs` 返回的是原始字节 —— 所以取数按文件类型分流:**文本走 `contents`(要转码),二进制走 `git/blobs`(要字节精确)**。这条差异是拿仓库里的真实文件逐字节比对出来的。
+而文档本来就在你自己的机器上:`git pull` 之后跑一次脚本就行 —— 不碰网络、不受限流,连令牌都不需要了。
+
+**增量同步,而且是零写入的那种。** 每个文件按**内容自身的 git blob 哈希**寻址:没变就不写任何东西。实测第一次全量 789 个文件约 25 秒,之后再跑是「0 个需要上传」、秒级完成;本地删掉的文件也会在收尾时从云端一并清理。
+
+**中文编码不会乱码。** 这个仓库里 2022 年前后的一批 SQL 是 GBK 编码的。同步是**字节忠实**的(原样入库),服务端探测出非 UTF-8 后如实声明 `charset=gb18030`,前端按声明的编码解码。这里有个坑值得记一笔:Fetch 规范的 `response.text()` **一律按 UTF-8 解码、完全无视响应头里的 charset**,所以读取端是自己读 `arrayBuffer()` 再用 `TextDecoder` 解码的。
 
 **Mermaid 图点击即全屏。** 正文里的图按「横向永不溢出 → 尽量整屏显示 → 最后才守可读下限」自适应;点一下打开全屏查看器,可拖拽平移、滚轮缩放(锚定光标),点击或 ESC 关闭。mermaid 本体约 1.4 MB,只在真的遇到图时才按需下载。
 
@@ -44,7 +53,7 @@
 | 前端 | Vite 8 + React 18 + TypeScript(严格模式) |
 | 样式 | Tailwind CSS v4 + daisyUI 5(浅色 `mycal` / 深色 `dim`) |
 | 后端 | Cloudflare Worker(`worker/`,自写轻路由、无框架) |
-| 数据库 | Cloudflare D1(SQLite):访问码锁 + **同步进来的仓库副本**(按 sha 内容寻址 + 512KB 分块) |
+| 数据库 | Cloudflare D1(SQLite):访问码锁 + **同步进来的文档副本**(按内容哈希寻址 + 512KB 分块) |
 | Markdown | markdown-it 15 + highlight.js 11(按需注册语言)+ KaTeX + DOMPurify |
 | 图形 | Mermaid 11(动态加载,约 1.4 MB,只在遇到图时才下载) |
 | 其它渲染 | epubjs(EPUB,懒加载) |
@@ -54,18 +63,19 @@
 
 ```bash
 pnpm install
-pnpm db:migrate:local     # 建 settings / auth_sessions 两张表
+pnpm db:migrate:local     # 建表(含文档存储用的三张表)
 
-# 复制模板并填入自己的 Gitee 私人令牌(只读权限即可)
+# 复制模板并填本地文档目录(不需要任何令牌)
 copy .dev.vars.example .dev.vars
-#   ⚠️ 令牌只能填在 .dev.vars;.dev.vars.example 是要提交进 Git 的模板
+#   DOCS_DIR=C:\03Docs\my-docs
 
 pnpm run dev              # http://localhost:5173
+pnpm run sync             # 另开一个终端:把文档推上去(先 git pull)
 ```
 
-令牌生成入口:<https://gitee.com/profile/personal_access_tokens>,权限勾「projects / 仓库代码」只读。
+首次打开会提示「仓库尚未同步」,跑一次 `pnpm run sync` 即可。
 
-> Windows 上 `pnpm db:migrate:local` 若报 “Wrangler requires at least Node.js v22”,是 PATH 里的 Node 太老;用 Node 22+ 的目录前置 PATH 再执行。
+> Windows 上 `pnpm db:migrate:local` 若报 “Wrangler requires at least Node.js v22”,是 PATH 里的 Node 太老;用 Node 22+ 的目录前置 PATH 再执行(`pnpm run sync` 同样需要 Node 18+)。
 
 ## 部署
 

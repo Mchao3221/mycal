@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "sync": "node tools/sync-docs.mjs",
     "build": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.worker.json && vite build",
     "db:migrate:local": "wrangler d1 migrations apply mycal_db --local",
     "db:migrate:remote": "wrangler d1 migrations apply mycal_db --remote",

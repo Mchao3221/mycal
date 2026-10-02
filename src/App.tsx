@@ -5,7 +5,6 @@ import { ReaderPane } from './components/ReaderPane'
 import { useDocContent, useDocsTree } from './hooks/useDocs'
 import { navigateToDoc, useDocRoute } from './hooks/useDocRoute'
 import { useSidebarWidth } from './hooks/useSidebarWidth'
-import { useSync } from './hooks/useSync'
 import { api } from './utils/api'
 import { isTextKind, rawUrl } from './utils/fileKind'
 import { ancestorsOf, buildTree, collectDirPaths } from './utils/tree'
@@ -60,8 +59,6 @@ function Workspace({ onLocked }: { onLocked: () => void }) {
   const { tree, error, loading, reload } = useDocsTree()
   const { width, onDragStart } = useSidebarWidth()
   const routePath = useDocRoute()
-  // 同步完成后重拉清单,左侧目录立刻反映新内容
-  const { progress, running, start: startSync, reset: resetSync } = useSync(reload)
 
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(loadJson<string[]>('expandedDirs', [])))
   const [theme, setTheme] = useState(() => loadString('theme', 'mycal'))
@@ -181,40 +178,34 @@ function Workspace({ onLocked }: { onLocked: () => void }) {
     )
   }
 
-  // 还没同步过:此时读任何文件都会 409,不如直接把「先同步」这件事摆在面前
-  if (tree.syncedAt === 0 && tree.files.length === 0 && progress.phase !== 'fetching' && !running) {
+  // 还没同步过:此时读任何文件都会 409,不如直接把「怎么同步」摆在面前
+  if (tree.syncedAt === 0 && tree.files.length === 0) {
     return (
       <div className="grid min-h-dvh place-items-center bg-base-200 p-6">
-        <div className="w-full max-w-lg rounded-box border border-base-300 bg-base-100 p-6 text-center">
+        <div className="w-full max-w-lg rounded-box border border-base-300 bg-base-100 p-6">
           <h1 className="mb-2 mt-0 text-base font-semibold">仓库尚未同步</h1>
           <p className="mb-1 mt-0 text-sm text-base-content/70">
-            这个阅读器不再实时访问 Gitee,而是先把仓库同步进 Cloudflare D1,之后只读本地副本 ——
-            这样打开文件不再受 Gitee 链路快慢影响。
+            这个阅读器不实时访问 Gitee,而是先把仓库同步进 Cloudflare D1,之后只读本地副本 ——
+            这样打开文件不再受链路快慢影响。
           </p>
-          <p className="mb-5 mt-0 text-xs text-base-content/45">
-            {tree.owner}/{tree.repo}@{tree.branch} · 首次同步约 800 个文件,视链路需要一两分钟
+          <p className="mb-4 mt-0 text-sm text-base-content/70">
+            同步在<b>你自己的电脑上</b>跑(Cloudflare 到 gitee.com 的网络不通,浏览器又会被
+            Gitee 的风控拦下,只有本机命令行能正常取数)。在项目目录执行:
           </p>
-          <button type="button" className="btn btn-primary btn-sm" onClick={() => void startSync()} disabled={running}>
-            {running ? <span className="loading loading-spinner loading-xs" /> : '开始同步'}
+          <pre className="panel-scroll mb-4 overflow-auto rounded-box bg-base-200 p-3 text-left font-mono text-xs">
+            pnpm run sync
+          </pre>
+          <p className="mb-4 mt-0 text-xs text-base-content/45">
+            {tree.owner}/{tree.repo}@{tree.branch} · 首次约 800 个文件、预计一两分钟;
+            之后再跑只会传有变化的文件。
+          </p>
+          <button type="button" className="btn btn-primary btn-sm" onClick={() => void reload()}>
+            已完成同步,重新加载
           </button>
-          {progress.phase === 'error' && (
-            <pre className="panel-scroll mt-4 max-h-40 overflow-auto whitespace-pre-wrap rounded-box bg-error/5 p-3 text-left text-xs text-error">
-              {progress.message}
-            </pre>
-          )}
         </div>
       </div>
     )
   }
-
-  const syncLabel =
-    progress.phase === 'planning'
-      ? '对比差异…'
-      : progress.phase === 'fetching'
-        ? `${progress.done}/${progress.total}`
-        : progress.phase === 'finishing'
-          ? '收尾…'
-          : '刷新'
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-base-100">
@@ -248,37 +239,13 @@ function Workspace({ onLocked }: { onLocked: () => void }) {
         </span>
 
         <div className="ml-auto flex shrink-0 items-center gap-1">
-          {running && (
-            <span className="hidden items-center gap-1.5 text-xs text-base-content/50 sm:inline-flex">
-              <span className="loading loading-spinner loading-xs" />
-              {progress.message}
-            </span>
-          )}
-          {!running && progress.phase === 'done' && (
-            <span
-              className={`hidden text-xs sm:inline ${
-                progress.failed.length > 0 ? 'text-warning' : 'text-success'
-              }`}
-            >
-              {progress.message}
-            </span>
-          )}
-          {!running && progress.phase === 'error' && (
-            <span className="hidden max-w-72 truncate text-xs text-error sm:inline" title={progress.message}>
-              同步失败:{progress.message}
-            </span>
-          )}
           <button
             type="button"
             className="btn btn-ghost btn-xs"
-            onClick={() => {
-              resetSync()
-              void startSync()
-            }}
-            disabled={running}
-            title="从 Gitee 同步仓库(只拉取有变化的文件)"
+            onClick={() => void reload()}
+            title="重新读取本地清单(同步请在本机执行 pnpm run sync)"
           >
-            {running ? syncLabel : '刷新'}
+            重新加载
           </button>
           <button
             type="button"

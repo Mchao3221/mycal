@@ -1,14 +1,26 @@
-# 本地开发环境变量(复制本文件为 .dev.vars 后填写真实值)。
-# .dev.vars 已被 .gitignore 忽略,不会进仓库;生产环境用 wrangler secret put GITEE_TOKEN。
+# 本地配置(复制本文件为 .dev.vars 后填写真实值)。
+# .dev.vars 已被 .gitignore 忽略,不会进仓库。
 #
-# ⚠️ 不要把真实令牌写在本文件里 —— 本文件是要提交进 Git 的模板!
+# ⚠️ 不要把真实访问码写在本文件里 —— 本文件是要提交进 Git 的模板!
 #
-# GITEE_TOKEN:Gitee 私人令牌,权限勾选「projects / 仓库代码」只读即可。
-#   生成入口:https://gitee.com/profile/personal_access_tokens
-#   仓库 chu-tianshu/my-docs 是私有的,不填令牌时 /api/docs/tree 会直接报错。
-GITEE_TOKEN=
+# 注意:**不需要 Gitee 令牌**。同步是从你本机的文档目录读文件再上传,
+# 完全不访问 Gitee(实测 Cloudflare 到 gitee.com 网络不通、浏览器会被 WAF 拦、
+# 本机连续请求会被风控限流 —— 三条网络路径都不可靠,所以干脆不走网络)。
 
-# 仓库坐标,留空即使用下列默认值。
+# ---------- 同步脚本 tools/sync-docs.mjs 用到的配置 ----------
+
+# DOCS_DIR:本地文档目录。你先 git pull,再跑 pnpm run sync 把这个目录推上去。
+DOCS_DIR=C:\03Docs\my-docs
+
+# SYNC_URL:阅读器地址。本地开发留空即可(默认 http://localhost:5173);
+#   同步到线上时填你的 Worker 地址,例如 https://mycal.xxx.workers.dev
+SYNC_URL=
+
+# SYNC_PASSWORD:阅读器的访问码。脚本要先解锁才能写入,所以需要它。
+#   不想写进文件就命令行传:node tools/sync-docs.mjs --password 你的访问码
+SYNC_PASSWORD=
+
+# ---------- 只用于界面显示(顶栏那几个字),可省略 ----------
 GITEE_OWNER=chu-tianshu
 GITEE_REPO=my-docs
 GITEE_BRANCH=master

@@ -7,7 +7,7 @@
 // 副作用(好的那种):读路径完全不需要令牌 —— 只要同步过一次,哪怕令牌失效了,
 // 已经同步的内容照样能读。
 import { HttpError } from './http'
-import { repoInfo } from './gitee'
+import { repoInfo } from './repo'
 import { contentDisposition, contentTypeFor, normPath } from './paths'
 import { getSyncMeta, listFiles, readFile } from './store'
 import type { Env } from './env'

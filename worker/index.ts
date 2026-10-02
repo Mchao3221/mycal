@@ -4,7 +4,7 @@
 import { HttpError, json, readBody } from './http'
 import { clearSessionCookie, lockNow, normPassword, setupLock, unlockLock, verifySession } from './lock'
 import { handleFile, handleTree } from './docs'
-import { handleFiles, handleFinish, handlePlan, handleStatus } from './sync'
+import { handleFinish, handlePut, handleStatus } from './sync'
 import type { Env } from './env'
 
 /** 锁自身的路由:未解锁也可访问;其余 /api/* 一律先验会话 */
@@ -80,16 +80,14 @@ async function route(req: Request, env: Env, path: string, method: string): Prom
   }
 
   // ---- 同步(把仓库搬进 D1) ----
+  // 注意:取数发生在浏览器侧 —— Worker 到 gitee.com 的网络不通(实测 fetch 超时),
+  // 所以这边的接口只负责「收字节」与「收尾」。
   if (path === '/api/sync/status' && method === 'GET') {
     return json(await handleStatus(env))
   }
 
-  if (path === '/api/sync/plan' && method === 'POST') {
-    return json(await handlePlan(env))
-  }
-
-  if (path === '/api/sync/files' && method === 'POST') {
-    return json(await handleFiles(env, await readBody<unknown>(req)))
+  if (path === '/api/sync/put' && method === 'POST') {
+    return json(await handlePut(env, req))
   }
 
   if (path === '/api/sync/finish' && method === 'POST') {
