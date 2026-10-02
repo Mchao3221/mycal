@@ -204,14 +204,6 @@ export function EpubView({ src, title, width, height }: EpubViewProps): JSX.Elem
     setPercent(0)
     setTocOpen(false)
 
-    try {
-      book = ePub(src)
-    } catch (err) {
-      setStatus('error')
-      setErrorText(describeError(err))
-      return
-    }
-
     // 首次渲染用的尺寸:props 优先,父容器还没量到时退到容器的实际尺寸,最后兜底一个常见开本
     const initial = sizeRef.current
     const w = initial.width > 0 ? Math.round(initial.width) : host.clientWidth > 0 ? host.clientWidth : 800
@@ -219,7 +211,31 @@ export function EpubView({ src, title, width, height }: EpubViewProps): JSX.Elem
 
     const run = async (): Promise<void> => {
       try {
-        await book!.ready
+        /**
+         * 先把字节取回来再交给 epub.js,**不要直接 `ePub(url)`**。
+         *
+         * epub.js 用 `path.parse(url).extension` 判断输入类型:我们接口的 URL 是
+         * `/api/docs/raw?path=…epub&sha=…`,它解析出的扩展名是 `epub&sha=…`,
+         * 既不等于 "epub" 也不等于 "binary",于是 open() 落进谁都不匹配的分支,
+         * book.ready 永远不 resolve —— 界面就一直停在「正在加载电子书… 0%」。
+         * (这个 bug 长期存在:此前只验证过 epub 的字节是否正确,没验证过它能不能被打开。)
+         *
+         * 传 ArrayBuffer 时 epub.js 按 binary 处理,完全不碰 URL 解析,任何 URL 形状都安全。
+         */
+        const res = await fetch(src)
+        if (!res.ok) throw new Error(`读取 EPUB 失败:HTTP ${res.status}`)
+        const bytes = await res.arrayBuffer()
+        if (disposed) return
+
+        try {
+          book = ePub(bytes)
+        } catch (err) {
+          setStatus('error')
+          setErrorText(describeError(err))
+          return
+        }
+
+        await book.ready
         if (disposed) return
 
         // 目录(失败不影响阅读,只影响目录面板)

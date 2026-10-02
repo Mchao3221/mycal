@@ -9,49 +9,16 @@ export interface TreeFile {
   sha: string
 }
 
-/** GET /api/docs/tree 的响应(v0.6.0 起读的是同步进 D1 的本地副本,不再是实时回源) */
+/** GET /api/docs/tree 的响应(v0.7.0 起由开发服务器直接扫描本机目录) */
 export interface DocsTree {
-  owner: string
-  repo: string
-  branch: string
-  /** 最近一次同步到的 commit sha */
+  /** 本机文档目录的绝对路径,顶栏直接显示它 */
+  dir: string
+  /** git HEAD 短 sha;取不到(不是 git 仓库 / 没装 git)时为空串 */
   rev: string
-  /** 最近一次同步完成时间;0 表示从未同步过 */
-  syncedAt: number
   fetchedAt: number
-  /** 全部文件的总字节数 */
+  /** 全部文件的字节数合计 */
   totalBytes: number
   files: TreeFile[]
-}
-
-/** 同步状态(GET /api/sync/status) */
-export interface SyncStatus {
-  owner: string
-  repo: string
-  branch: string
-  rev: string
-  syncedAt: number
-  fileCount: number
-  totalBytes: number
-}
-
-/** 同步第一步:远端树与本地的差异 */
-export interface SyncPlan {
-  rev: string
-  total: number
-  need: { path: string; sha: string; size: number }[]
-  unchanged: number
-  removed: number
-  paths: string[]
-}
-
-/** 同步第二步:一批文件的结果 */
-export interface SyncApplyResult {
-  saved: number
-  written: number
-  failed: { path: string; error: string }[]
-  more: boolean
-  diag: string
 }
 
 /** GET /api/lock/status 的响应 */

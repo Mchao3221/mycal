@@ -1,61 +1,30 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { DocTree } from './components/DocTree'
-import { LockScreen } from './components/LockScreen'
 import { ReaderPane } from './components/ReaderPane'
 import { useDocContent, useDocsTree } from './hooks/useDocs'
 import { navigateToDoc, useDocRoute } from './hooks/useDocRoute'
 import { useSidebarWidth } from './hooks/useSidebarWidth'
-import { api } from './utils/api'
 import { isTextKind, rawUrl } from './utils/fileKind'
 import { ancestorsOf, buildTree, collectDirPaths } from './utils/tree'
 import { loadJson, loadString, saveJson, saveString } from './utils/storage'
-import type { LockStatus } from './types'
 
-type LockPhase = 'checking' | 'setup' | 'locked' | 'ready'
-
-/** 同步时间的口语化显示:刚同步完就写「刚刚」,比一串时间戳有用 */
-function formatSyncTime(ts: number): string {
-  const diff = Date.now() - ts
-  if (diff < 60_000) return '刚刚'
-  if (diff < 3600_000) return `${Math.floor(diff / 60_000)} 分钟前`
-  if (diff < 86400_000) return `${Math.floor(diff / 3600_000)} 小时前`
-  return new Date(ts).toLocaleDateString()
-}
-
+/**
+ * MyDocs —— 本地只读文档阅读器(v0.7.0)。
+ *
+ * 文档内容由开发服务器**直接从本机目录读取**(见 `tools/docs-server.mjs`):
+ * 没有云端、没有上传、没有同步、没有访问码,`pnpm run dev` 打开即读。
+ *
+ * 之所以退回到这一步:部署在 Cloudflare 的网页跑在 Cloudflare 的机器上,
+ * 它永远看不到你本机的磁盘;要让线上能读就必须先把内容上传(旧方案),
+ * 而那条路上 Cloudflare 到 Gitee 不通、浏览器被 Gitee 风控拦、本机连续请求又被限流,
+ * 取数环节怎么做都不可靠。既然只需要在本机读,那就根本不需要取数 —— 直接读文件。
+ */
 export default function App() {
-  const [phase, setPhase] = useState<LockPhase>('checking')
-
-  useEffect(() => {
-    let alive = true
-    api<LockStatus>('/api/lock/status')
-      .then(status => {
-        if (!alive) return
-        setPhase(!status.isSet ? 'setup' : status.unlocked ? 'ready' : 'locked')
-      })
-      .catch(() => {
-        // 查不到锁状态时按「已上锁」处理:宁可让用户多输一次访问码,也不能把内容漏出去
-        if (alive) setPhase('locked')
-      })
-    return () => {
-      alive = false
-    }
-  }, [])
-
-  if (phase === 'checking') {
-    return (
-      <div className="grid min-h-dvh place-items-center bg-base-200">
-        <span className="loading loading-spinner loading-md text-primary" />
-      </div>
-    )
-  }
-
-  if (phase !== 'ready') return <LockScreen mode={phase} onUnlocked={() => setPhase('ready')} />
-
-  return <Workspace onLocked={() => setPhase('locked')} />
+  return <Workspace />
 }
 
-/** 解锁后的工作台:左目录 + 右阅读区,两栏各自内部滚动,整页不出滚动条 */
-function Workspace({ onLocked }: { onLocked: () => void }) {
+/** 工作台:左目录 + 右阅读区,两栏各自内部滚动,整页不出滚动条 */
+function Workspace() {
   const { tree, error, loading, reload } = useDocsTree()
   const { width, onDragStart } = useSidebarWidth()
   const routePath = useDocRoute()
@@ -107,10 +76,8 @@ function Workspace({ onLocked }: { onLocked: () => void }) {
 
   /**
    * 悬停预热。
-   *
-   * 打开文件慢的根因在 Cloudflare 到 Gitee 那一段,但"感知速度"可以在前端补:
-   * 鼠标停在某个文件上就先把内容取回来塞进浏览器缓存(响应头是 private, max-age=300),
-   * 真正点开时通常就是零请求。150ms 防抖,避免鼠标扫过目录树时打出一串请求。
+   * 鼠标停在某个文件上就先把内容取回来(本地读盘 + 浏览器缓存),真正点开时通常就是零请求。
+   * 150ms 防抖,避免鼠标扫过目录树时打出一串请求。
    */
   const prefetchTimer = useRef<number | null>(null)
   const prefetch = useCallback(
@@ -134,15 +101,6 @@ function Workspace({ onLocked }: { onLocked: () => void }) {
     [],
   )
 
-  const lockNow = async () => {
-    try {
-      await api<{ ok: true }>('/api/lock/lock', { method: 'POST' })
-    } catch {
-      // 即使请求失败也回锁屏:本地状态先收紧,避免「点了上锁其实没锁上」的错觉
-    }
-    onLocked()
-  }
-
   if (loading) {
     return (
       <div className="grid min-h-dvh place-items-center bg-base-200">
@@ -158,49 +116,17 @@ function Workspace({ onLocked }: { onLocked: () => void }) {
     return (
       <div className="grid min-h-dvh place-items-center bg-base-200 p-6">
         <div className="w-full max-w-lg rounded-box border border-error/40 bg-base-100 p-6">
-          <h1 className="mb-1 mt-0 text-base font-semibold">无法读取本地目录清单</h1>
+          <h1 className="mb-1 mt-0 text-base font-semibold">读不到文档目录</h1>
           <p className="mb-4 mt-0 text-sm text-base-content/70">
-            清单来自同步进 D1 的副本;读不到通常是本地数据库异常,而不是 Gitee 的问题。
+            内容由开发服务器直接读本机目录。请检查 <code className="font-mono">.env</code> 里的
+            <code className="mx-1 font-mono">DOCS_DIR</code> 是否指向一个存在的目录,然后重启
+            <code className="mx-1 font-mono">pnpm run dev</code>。
           </p>
           <pre className="panel-scroll mb-4 max-h-40 overflow-auto whitespace-pre-wrap rounded-box bg-base-200 p-3 text-xs text-error">
             {error || '未知错误'}
           </pre>
-          <div className="flex gap-2">
-            <button type="button" className="btn btn-primary btn-sm" onClick={() => void reload()}>
-              重试
-            </button>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => void lockNow()}>
-              上锁
-            </button>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  // 还没同步过:此时读任何文件都会 409,不如直接把「怎么同步」摆在面前
-  if (tree.syncedAt === 0 && tree.files.length === 0) {
-    return (
-      <div className="grid min-h-dvh place-items-center bg-base-200 p-6">
-        <div className="w-full max-w-lg rounded-box border border-base-300 bg-base-100 p-6">
-          <h1 className="mb-2 mt-0 text-base font-semibold">仓库尚未同步</h1>
-          <p className="mb-1 mt-0 text-sm text-base-content/70">
-            这个阅读器不实时访问 Gitee,而是先把仓库同步进 Cloudflare D1,之后只读本地副本 ——
-            这样打开文件不再受链路快慢影响。
-          </p>
-          <p className="mb-4 mt-0 text-sm text-base-content/70">
-            同步在<b>你自己的电脑上</b>跑(Cloudflare 到 gitee.com 的网络不通,浏览器又会被
-            Gitee 的风控拦下,只有本机命令行能正常取数)。在项目目录执行:
-          </p>
-          <pre className="panel-scroll mb-4 overflow-auto rounded-box bg-base-200 p-3 text-left font-mono text-xs">
-            pnpm run sync
-          </pre>
-          <p className="mb-4 mt-0 text-xs text-base-content/45">
-            {tree.owner}/{tree.repo}@{tree.branch} · 首次约 800 个文件、预计一两分钟;
-            之后再跑只会传有变化的文件。
-          </p>
           <button type="button" className="btn btn-primary btn-sm" onClick={() => void reload()}>
-            已完成同步,重新加载
+            重试
           </button>
         </div>
       </div>
@@ -215,13 +141,8 @@ function Workspace({ onLocked }: { onLocked: () => void }) {
           <span className="font-display text-sm font-semibold tracking-tight">MyDocs</span>
         </div>
 
-        <span
-          className="hidden truncate text-xs text-base-content/45 sm:inline"
-          title={`${tree.owner}/${tree.repo}@${tree.branch}`}
-        >
-          {tree.owner}/{tree.repo}
-          <span className="mx-1 text-base-content/25">·</span>
-          {tree.branch}
+        <span className="hidden min-w-0 truncate text-xs text-base-content/45 sm:inline" title={tree.dir}>
+          <span className="font-mono">{tree.dir}</span>
           {tree.rev && (
             <>
               <span className="mx-1 text-base-content/25">·</span>
@@ -230,12 +151,6 @@ function Workspace({ onLocked }: { onLocked: () => void }) {
           )}
           <span className="mx-1 text-base-content/25">·</span>
           {tree.files.length} 个文件
-          {tree.syncedAt > 0 && (
-            <>
-              <span className="mx-1 text-base-content/25">·</span>
-              <span title={new Date(tree.syncedAt).toLocaleString()}>同步于 {formatSyncTime(tree.syncedAt)}</span>
-            </>
-          )}
         </span>
 
         <div className="ml-auto flex shrink-0 items-center gap-1">
@@ -243,7 +158,7 @@ function Workspace({ onLocked }: { onLocked: () => void }) {
             type="button"
             className="btn btn-ghost btn-xs"
             onClick={() => void reload()}
-            title="重新读取本地清单(同步请在本机执行 pnpm run sync)"
+            title="重新扫描文档目录(改了文件不用重启)"
           >
             重新加载
           </button>
@@ -255,27 +170,8 @@ function Workspace({ onLocked }: { onLocked: () => void }) {
           >
             {theme === 'dim' ? '浅色' : '深色'}
           </button>
-          <button type="button" className="btn btn-ghost btn-xs" onClick={() => void lockNow()}>
-            上锁
-          </button>
         </div>
       </header>
-
-      {/* 半截数据的告警。
-          线上曾出现「从没完成过一次同步(收尾没跑),但已经传了 52 个文件」的状态:
-          文件数不为 0,于是所有"未同步"的判断都失效,页面看起来完全正常,
-          用户只看到两个顶层目录、还以为是目录树坏了。
-          只要 syncedAt 还是 0 就说明这份数据不完整,必须显式说出来。 */}
-      {tree.syncedAt === 0 && tree.files.length > 0 && (
-        <div className="flex shrink-0 items-center gap-2 border-b border-warning/40 bg-warning/15 px-3 py-1.5 text-xs text-base-content/80">
-          <span className="font-semibold text-warning">数据不完整</span>
-          <span className="min-w-0 truncate">
-            这份内容来自一次没有跑完的同步,当前只有 {tree.files.length} 个文件。在本机项目目录执行
-            <code className="mx-1 rounded bg-base-100/70 px-1 py-0.5 font-mono">pnpm run sync</code>
-            补全后再刷新本页。
-          </span>
-        </div>
-      )}
 
       <div className="flex min-h-0 flex-1">
         <aside style={{ width: `${width}px` }} className="flex min-h-0 shrink-0 flex-col border-r border-base-300">
