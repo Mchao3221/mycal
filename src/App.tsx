@@ -261,6 +261,22 @@ function Workspace({ onLocked }: { onLocked: () => void }) {
         </div>
       </header>
 
+      {/* 半截数据的告警。
+          线上曾出现「从没完成过一次同步(收尾没跑),但已经传了 52 个文件」的状态:
+          文件数不为 0,于是所有"未同步"的判断都失效,页面看起来完全正常,
+          用户只看到两个顶层目录、还以为是目录树坏了。
+          只要 syncedAt 还是 0 就说明这份数据不完整,必须显式说出来。 */}
+      {tree.syncedAt === 0 && tree.files.length > 0 && (
+        <div className="flex shrink-0 items-center gap-2 border-b border-warning/40 bg-warning/15 px-3 py-1.5 text-xs text-base-content/80">
+          <span className="font-semibold text-warning">数据不完整</span>
+          <span className="min-w-0 truncate">
+            这份内容来自一次没有跑完的同步,当前只有 {tree.files.length} 个文件。在本机项目目录执行
+            <code className="mx-1 rounded bg-base-100/70 px-1 py-0.5 font-mono">pnpm run sync</code>
+            补全后再刷新本页。
+          </span>
+        </div>
+      )}
+
       <div className="flex min-h-0 flex-1">
         <aside style={{ width: `${width}px` }} className="flex min-h-0 shrink-0 flex-col border-r border-base-300">
           <div className="flex shrink-0 items-center gap-1 px-2 py-1.5 text-[11px] text-base-content/45">

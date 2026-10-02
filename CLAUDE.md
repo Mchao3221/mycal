@@ -64,7 +64,14 @@ pnpm run deploy         # build → 远端 D1 迁移 → wrangler deploy(顺序�
   - **读路径不需要任何凭据**(`worker/docs.ts` 用 `repoInfo`,worker 里已经没有 GITEE_TOKEN 这个概念):同步过一次之后,内容就在 D1 里。
   - **空文件必须显式写一块空内容**:只留下清单行的话读回时会被判成「不存在」。这个 0 字节的 `000一定要按顺序执行.txt` 已经坑过两次(另一次是 `content: ""` 的真值判断),改这块务必回归它。
   - **GBK 文件的编码处理**:同步是字节忠实的(GBK 的 SQL 原样 612806 字节入库),worker 在响应时用 `textContentType` 探测出非 UTF-8 并写 `charset=gb18030`。**但前端不能依赖 `res.text()`** —— Fetch 规范的 `text()` 一律按 UTF-8 解码、无视响应头的 charset,所以 `src/utils/api.ts` 的 `fetchText` 自己读 `arrayBuffer()` 再按声明的 charset 用 `TextDecoder` 解码。这个坑实测过:字节流与响应头都对,页面却是乱码。
-  - 同步脚本 `tools/sync-docs.mjs`(Node 18+):扫描 `DOCS_DIR` → 算内容哈希 → 与服务端清单比对 → 只传变化的 → 收尾清理。需要阅读器的访问码才能写入(读 `.dev.vars` 的 `SYNC_PASSWORD` 或 `--password`)。
+  - 同步脚本有两版,**功能完全一致**,按机器上有没有 Node 18+ 选:
+    - `tools/sync-docs.mjs`(Node 18+,`pnpm run sync`)—— 用的是全局 fetch,所以 Node 14 跑不了;
+    - `tools/sync-docs.ps1`(Windows 自带 PowerShell 5.1,`sync.cmd` 双击)—— **用户机器上就该用这版**。
+      他的 nvm 里只有 Node v14.21.3 且 pnpm 不在 PATH,`pnpm run sync` 在他那儿根本起不来,
+      这就是线上数据一直补不齐的直接原因。
+  - **两版算出的内容哈希必须一致**(都是 `sha1("blob <len>\0" + 内容)`),实测互相验证过:PS 版对 783 个文件算出的 sha 与 Node 版上传时算的**零差异**。
+  - PowerShell 版的三个坑,改它之前先看:`$args` 是自动变量不能当局部变量名;5.1 读**无 BOM 的 UTF-8 .ps1 会按 ANSI 解码**(中文全乱),所以这个文件必须存成 **UTF-8 with BOM**;5.1 的 `Invoke-RestMethod` 传**字符串 body 会按非 UTF-8 编码发出去**,JSON 必须自己转成 UTF-8 字节再传。
+  - 脚本收尾之后会**回读服务端清单与本地对账**,缺文件直接点名并以非零码退出。这一步是必须的:线上曾出现过「收尾没跑、只传了 52 个文件」的状态,而应用照样显示成一棵正常的树,使用者完全看不出来。
 - **Worker 路由(`worker/index.ts`)**:`/api/lock/*`(锁)、`/api/docs/tree|raw`(只读 D1 里的副本)、`/api/sync/status|put|finish`(接收本机脚本推上来的内容)。全部 /api/* 除锁自身外都要先验会话。
 - **访问码锁(`worker/lock.ts`)**:`fetch` 入口对除 `/api/lock/status|setup|unlock` 外的所有 `/api/*` 验会话,无效一律 401。密码 PBKDF2-SHA256(10 万迭代,workerd 拒绝 >100000,勿调高)存 `settings` 的 `lock.salt/lock.hash`;解锁签发随机 token,`auth_sessions` 只存其 SHA-256(所以"上锁"删表即可真撤销所有设备);HttpOnly cookie `mycal_session`,7 天滑动续期、上限 5 会话;失败计数 ≥5 次指数退避 429。忘记访问码:D1 删 `lock.*` 三行(见 `docs/sql/解锁码重置.sql`)。`HttpError` 等 HTTP 工具在 `worker/http.ts`(历史上从 `ai.ts` 借用,`ai.ts` 已删)。
 - **表结构唯一事实源是 `migrations/*.sql`**:代码里没有任何建表语句。v0.5.0 的 `0006_docs_reader.sql` 把健康日志相关表全部 DROP,只留 `settings` 与 `auth_sessions`。改表必须新增增量迁移(不重写历史),`pnpm db:migrate:local` 本地验证;build 不连库,结构漂移只在运行时暴露。

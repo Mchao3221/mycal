@@ -68,14 +68,28 @@ pnpm db:migrate:local     # 建表(含文档存储用的三张表)
 # 复制模板并填本地文档目录(不需要任何令牌)
 copy .dev.vars.example .dev.vars
 #   DOCS_DIR=C:\03Docs\my-docs
+#   SYNC_URL=https://你的worker地址     # 同步到线上时填;留空则同步到本地开发服务器
+#   SYNC_PASSWORD=你的访问码
 
 pnpm run dev              # http://localhost:5173
-pnpm run sync             # 另开一个终端:把文档推上去(先 git pull)
 ```
 
-首次打开会提示「仓库尚未同步」,跑一次 `pnpm run sync` 即可。
+**同步**(先 `git pull`,`DOCS_DIR` 里的内容才会是最新的):
 
-> Windows 上 `pnpm db:migrate:local` 若报 “Wrangler requires at least Node.js v22”,是 PATH 里的 Node 太老;用 Node 22+ 的目录前置 PATH 再执行(`pnpm run sync` 同样需要 Node 18+)。
+```powershell
+# 有 Node 18+ 的机器:
+pnpm run sync
+
+# 没有 Node(或版本太老)—— 用 Windows 自带的 PowerShell,什么都不用装:
+tools\sync-docs.ps1
+# 也可以直接双击项目根目录的 sync.cmd
+```
+
+首次打开会提示「仓库尚未同步」,同步一次即可。脚本是增量的:没变的文件一个字节都不传,
+所以**重复跑是安全的**;它还会在结束前回读服务端清单与本地对账,缺文件直接点名。
+
+> Windows 上 `pnpm db:migrate:local` 若报 “Wrangler requires at least Node.js v22”,是 PATH 里的 Node 太老;用 Node 22+ 的目录前置 PATH 再执行。
+> 整个项目需要 Node 18+(Vite 8 更高);若机器上只有老版本 Node,同步这条可以用 `tools\sync-docs.ps1` 绕开。
 
 ## 部署
 
