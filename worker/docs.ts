@@ -109,22 +109,68 @@ interface GiteeTreeData {
   tree?: GiteeTreeEntry[]
 }
 
-async function requestJson(url: string): Promise<Response> {
-  return fetch(url, {
-    headers: { Accept: 'application/json', 'User-Agent': 'mycal-reader' },
-    cf: { cacheEverything: true, cacheTtl: TREE_TTL_SEC },
-  })
+/**
+ * 上游诊断记录。
+ *
+ * 为什么要有它:线上第一次部署时 Cloudflare 侧拿到了 502,而当时的文案只有「不可读,
+ * 或令牌无效」—— 没法区分是「Gitee 拒绝了 Cloudflare 的出口 IP」「令牌没生效」还是
+ * 「接口路径变了」。云端调试一轮要走一次 CI,所以宁可把上游的真实状态码和响应片段
+ * 一路带到前端,让一次请求就能定位。
+ * 注意:只记状态码和响应体片段,**绝不记 URL**(URL 里带 access_token)。
+ */
+interface Diag {
+  step: string
+  status: number | string
+  body?: string
+}
+
+let diags: Diag[] = []
+
+function snippet(text: string, max = 200): string {
+  const flat = text.replace(/\s+/g, ' ').trim()
+  return flat.length > max ? flat.slice(0, max) + '…' : flat
+}
+
+function diagText(): string {
+  return diags.length === 0 ? '无上游记录' : diags.map(d => `${d.step}=${d.status}${d.body ? `(${d.body})` : ''}`).join(' / ')
+}
+
+/** 带诊断的上游请求:网络异常也要记下来,否则会被外层当成 500 内部错误,掩盖真实原因 */
+async function requestJson(url: string, step: string): Promise<Response | null> {
+  try {
+    const res = await fetch(url, {
+      headers: { Accept: 'application/json', 'User-Agent': 'mycal-reader' },
+      cf: { cacheEverything: true, cacheTtl: TREE_TTL_SEC },
+    })
+    if (!res.ok) {
+      let body = ''
+      try {
+        body = snippet(await res.text())
+      } catch {
+        /* 读不到就算了,状态码本身已经够用 */
+      }
+      diags.push({ step, status: res.status, body })
+      return null
+    }
+    return res
+  } catch (err) {
+    // 「fetch 抛异常」意味着连不上 / DNS / TLS 被拦,和「上游返回 4xx」是两回事,
+    // 必须分开报,否则会把网络问题误判成权限问题。
+    diags.push({ step, status: 'fetch 异常', body: err instanceof Error ? err.message : String(err) })
+    return null
+  }
 }
 
 /** 拿文件树;fresh 为 true 时用一次性查询参数绕开边缘缓存 */
 async function requestTree(conf: RepoConf, ref: string, fresh: boolean): Promise<GiteeTreeData | null> {
   const bust = fresh ? `&_=${Date.now()}` : ''
   const url = `${API_BASE}/repos/${conf.owner}/${conf.repo}/git/trees/${encodeURIComponent(ref)}?recursive=1&access_token=${encodeURIComponent(conf.token)}${bust}`
-  const res = await requestJson(url)
-  if (!res.ok) return null
+  const res = await requestJson(url, `trees:${ref.slice(0, 8)}`)
+  if (!res) return null
   try {
     return (await res.json()) as GiteeTreeData
-  } catch {
+  } catch (err) {
+    diags.push({ step: 'trees', status: 'JSON 解析失败', body: err instanceof Error ? err.message : '' })
     return null
   }
 }
@@ -133,26 +179,36 @@ async function requestTree(conf: RepoConf, ref: string, fresh: boolean): Promise
 async function resolveCommitSha(conf: RepoConf, fresh: boolean): Promise<string | null> {
   const bust = fresh ? `&_=${Date.now()}` : ''
   const url = `${API_BASE}/repos/${conf.owner}/${conf.repo}/branches/${encodeURIComponent(conf.branch)}?access_token=${encodeURIComponent(conf.token)}${bust}`
-  const res = await requestJson(url)
-  if (!res.ok) return null
+  const res = await requestJson(url, 'branches')
+  if (!res) return null
   try {
     const data = (await res.json()) as { commit?: { sha?: unknown } }
     return typeof data.commit?.sha === 'string' ? data.commit.sha : null
-  } catch {
+  } catch (err) {
+    diags.push({ step: 'branches', status: 'JSON 解析失败', body: err instanceof Error ? err.message : '' })
     return null
   }
 }
 
 export async function fetchTree(env: Env, fresh = false): Promise<DocsTree> {
   const conf = confOf(env)
+  diags = []
 
-  // 先用分支接口换 commit sha:它比分支名精确(内容变了 sha 就变),可以安全地长缓存。
+  // 用分支接口换 commit sha:它比分支名精确(内容变了 sha 就变),可以安全地长缓存。
+  // 换不到就退回分支名当 ref,并且两个 ref 都试一遍 —— 少一次「云端 502 只能靠猜」。
   const commitSha = await resolveCommitSha(conf, fresh)
   const ref = commitSha ?? conf.branch
 
-  const data = await requestTree(conf, ref, fresh)
+  let data = await requestTree(conf, ref, fresh)
+  if (!data && commitSha !== null) data = await requestTree(conf, conf.branch, fresh)
   if (!data) {
-    throw new HttpError(502, `Gitee 文件树获取失败:仓库 ${conf.owner}/${conf.repo} 不可读,或 GITEE_TOKEN 无效/权限不足`)
+    throw new HttpError(
+      502,
+      `Gitee 文件树获取失败:仓库 ${conf.owner}/${conf.repo}、分支 ${conf.branch}。` +
+        `上游记录 → ${diagText()}。` +
+        `排查提示:出现「fetch 异常」或 403,通常是 Gitee 拒绝了 Cloudflare 的出口 IP 或触发风控;` +
+        `出现 401,则是 GITEE_TOKEN 无效;出现 404,则是仓库名或令牌的仓库授权范围不对。`,
+    )
   }
 
   const files: TreeFile[] = []
@@ -169,10 +225,20 @@ export async function fetchTree(env: Env, fresh = false): Promise<DocsTree> {
 
   // 实测:Gitee 对不存在的分支返回 200 + 空树(不是 404)。不显式拦这一手,
   // 分支名写错时会静默显示一棵空目录树,排查起来非常费劲。
+  //
+  // 这里必须把「接口原始返回了多少条」和上游诊断一起报出来:
+  // 「200 但 tree 为空」与「403 被拦」是两种完全不同的故障,只看一句"读不到文件"分不出来。
+  // 尤其是令牌未生效或触发风控时,Gitee 可能回 200 带一个错误体,此时 data.tree 是 undefined。
   if (files.length === 0) {
+    const rawCount = Array.isArray(data.tree) ? data.tree.length : -1
+    const keys = Object.keys(data).join(',') || '(空对象)'
     throw new HttpError(
       502,
-      `仓库 ${conf.owner}/${conf.repo} 在分支 ${conf.branch} 上没有任何可读文件:分支名可能有误,或令牌缺少该仓库的读权限`,
+      `仓库 ${conf.owner}/${conf.repo} 在分支 ${conf.branch} 上没有可读文件。` +
+        `接口返回 200,响应顶层字段 [${keys}],tree 条目 ${rawCount === -1 ? '不存在' : rawCount} 条,过滤隐藏项后 0 条。` +
+        `上游记录 → ${diagText()}。` +
+        `若 tree 条目不存在,多半是令牌未生效或触发风控(Gitee 有时用 200 带错误体);` +
+        `若是 0 条,则是分支名写错。`,
     )
   }
 
@@ -300,25 +366,43 @@ interface Attempt {
  *  2. **空文件的 `content` 是空字符串**,属于合法内容,不能当成取失败 ——
  *     仓库里确实有 0 字节的文件,按失败处理会让它永远打不开。
  */
-async function tryBase64Json(url: string, status: Attempt): Promise<Uint8Array | null> {
-  const res = await fetch(url, { headers: { Accept: 'application/json', 'User-Agent': 'mycal-reader' } })
+async function tryBase64Json(url: string, status: Attempt, step: string): Promise<Uint8Array | null> {
+  let res: Response
+  try {
+    res = await fetch(url, { headers: { Accept: 'application/json', 'User-Agent': 'mycal-reader' } })
+  } catch (err) {
+    diags.push({ step, status: 'fetch 异常', body: err instanceof Error ? err.message : String(err) })
+    return null
+  }
   status.code = res.status
   if (!res.ok) {
     if (res.status === 404) status.notFound = true
+    let body = ''
+    try {
+      body = snippet(await res.text())
+    } catch {
+      /* 状态码够用 */
+    }
+    diags.push({ step, status: res.status, body })
     return null
   }
   let data: unknown
   try {
     data = await res.json()
-  } catch {
+  } catch (err) {
+    diags.push({ step, status: 'JSON 解析失败', body: err instanceof Error ? err.message : '' })
     return null
   }
   if (Array.isArray(data)) {
+    // Gitee 用 200 + [] 表示「这个路径不存在」,不是 404
     status.notFound = true
     return null
   }
   const content = (data as { content?: unknown }).content
-  if (typeof content !== 'string') return null
+  if (typeof content !== 'string') {
+    diags.push({ step, status: 200, body: '响应里没有 content 字段(可能文件过大)' })
+    return null
+  }
   return base64ToBytes(content.replace(/\s+/g, ''))
 }
 
@@ -335,6 +419,7 @@ async function tryBase64Json(url: string, status: Attempt): Promise<Uint8Array |
  */
 export async function fetchFile(env: Env, path: string): Promise<Response> {
   const conf = confOf(env)
+  diags = []
   const encoded = encodePath(path)
   const token = encodeURIComponent(conf.token)
   const ref = encodeURIComponent(conf.branch)
@@ -349,13 +434,13 @@ export async function fetchFile(env: Env, path: string): Promise<Response> {
   const tryBlobs = async (): Promise<Uint8Array | null> => {
     sha = await blobShaOf(env, path)
     if (!sha) return null
-    return tryBase64Json(`${repoBase}/git/blobs/${encodeURIComponent(sha)}?access_token=${token}`, blobStatus)
+    return tryBase64Json(`${repoBase}/git/blobs/${encodeURIComponent(sha)}?access_token=${token}`, blobStatus, 'blobs')
   }
 
   // 注意用 !== null 而不是真值判断:0 字节文件的合法结果就是一个空的 Uint8Array,
   // 写成 if (bytes) 会让它被当成失败继续往下走,最后报一个莫名其妙的错。
   if (isText) {
-    const bytes = await tryBase64Json(contentsUrl, contentsStatus)
+    const bytes = await tryBase64Json(contentsUrl, contentsStatus, 'contents')
     if (bytes !== null) return fileResponse(bytes, path, bytes)
     const raw = await tryBlobs()
     // 这里拿到的可能是 GBK 原始字节,fileResponse 会据此写对 charset
@@ -363,22 +448,35 @@ export async function fetchFile(env: Env, path: string): Promise<Response> {
   } else {
     const fromBlob = await tryBlobs()
     if (fromBlob !== null) return fileResponse(fromBlob, path)
-    const bytes = await tryBase64Json(contentsUrl, contentsStatus)
+    const bytes = await tryBase64Json(contentsUrl, contentsStatus, 'contents')
     if (bytes !== null) return fileResponse(bytes, path)
   }
 
-  // 兜底:raw 直链
+  // 兜底:raw 直链(实测对私有仓库一律 403,只对公开仓库有意义)。
+  // 这里不能用 requestJson:它会带 Accept: application/json,而 raw 返回的是文件原文/二进制。
   const rawUrl = `${WEB_BASE}/${conf.owner}/${conf.repo}/raw/${ref}/${encoded}?access_token=${token}`
-  const raw = await fetch(rawUrl, {
-    headers: { 'User-Agent': 'mycal-reader' },
-    cf: { cacheEverything: true, cacheTtl: FILE_TTL_SEC },
-  })
-  if (raw.ok && raw.body) return fileResponse(raw.body, path)
+  try {
+    const rawRes = await fetch(rawUrl, {
+      headers: { 'User-Agent': 'mycal-reader' },
+      cf: { cacheEverything: true, cacheTtl: FILE_TTL_SEC },
+    })
+    if (rawRes.ok && rawRes.body) return fileResponse(rawRes.body, path)
+    diags.push({ step: 'raw', status: rawRes.status })
+    if (rawRes.status === 404) {
+      throw new HttpError(404, `文件不存在:${path}`)
+    }
+  } catch (err) {
+    if (err instanceof HttpError) throw err
+    diags.push({ step: 'raw', status: 'fetch 异常', body: err instanceof Error ? err.message : String(err) })
+  }
 
-  // 全失败:把每一级的状态码都报出来,便于区分「令牌无效」「路径写错」「文件过大」
-  const codes = `contents=${contentsStatus.code || '未执行'} / blobs=${blobStatus.code || (sha ? '未执行' : '无 sha')} / raw=${raw.status}`
-  if (contentsStatus.notFound || blobStatus.notFound || raw.status === 404) {
+  if (contentsStatus.notFound || blobStatus.notFound) {
     throw new HttpError(404, `文件不存在:${path}`)
   }
-  throw new HttpError(502, `读取文件失败:${path}(${codes})。请检查 GITEE_TOKEN 是否有效、是否具备该仓库的读权限`)
+  throw new HttpError(
+    502,
+    `读取文件失败:${path}。上游记录 → ${diagText()}。` +
+      `排查提示:出现「fetch 异常」或 403,通常是 Gitee 拒绝了 Cloudflare 的出口 IP 或触发风控;` +
+      `出现 401,则是 GITEE_TOKEN 无效。`,
+  )
 }
