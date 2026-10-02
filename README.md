@@ -1,27 +1,40 @@
-# MyDocs — 只读文档阅读器
+# MyDocs — 本地只读文档阅读器
 
-左边目录树,右边阅读区。内容来自 Gitee 私有仓库 [`chu-tianshu/my-docs`](https://gitee.com/chu-tianshu/my-docs),**只读不改** —— 这个应用永远不写仓库、不提交、不改任何文件,写作仍然在 Obsidian 里做,这里只负责舒服地读。
+左边目录树,右边阅读区。**只读不改** —— 这个应用永远不写你的文档、不提交、不改任何文件,写作仍然在 Obsidian 里做,这里只负责舒服地读。
 
-> v0.5.0 由「私人 AI 健康日志 MyCal」整体重构而来,健康日志相关代码与数据表已全部退役。
-> v0.6.2 起内容由本机 `pnpm run sync` 推送到 Cloudflare,阅读只读云端副本。
+## 怎么跑
+
+```bash
+pnpm install
+
+# 复制模板,填上你的文档目录(不填默认就是 C:\03Docs\my-docs)
+copy .env.example .env
+
+pnpm run dev            # 打开 http://localhost:5173
+```
+
+就这三步。没有数据库、没有云端、没有访问码、没有同步。
+
+> 需要 Node 18+(Vite 8 要求更高)。若本机 nvm 里只有老版本,先 `nvm use 22`。
+
+**改了文档不用重启**:编辑/新增/删除文件之后,点顶栏的「重新加载」重新扫描一次即可。
 
 ## 能读什么
 
 | 格式 | 打开方式 |
 |---|---|
 | `.md` | 完整渲染:GFM + 表格 + 任务列表 + 代码高亮 + **KaTeX 公式** + **Mermaid 图形** + Obsidian 方言(`[[wikilink]]` 内部跳转、`![[嵌入]]`、`> [!note]` callout、frontmatter、`==高亮==`) |
-| `.sql` `.txt` `.json` 等文本 | 只读高亮 + 行号(这个仓库有 752 个 SQL,是绝对主力) |
+| `.sql` `.txt` `.json` 等文本 | 只读高亮 + 行号 |
 | `.png` `.jpg` `.gif` `.webp` `.svg` | 直接显示,可切换「适应宽度 / 原始尺寸」 |
 | `.epub` | 在线阅读(翻页、书内目录、字号、跟随主题) |
-| `.pptx` `.xlsx` `.zip` 等 | 新窗口打开,预览还是下载交给浏览器 |
+| `.pptx` `.xlsx` `.pdf` 等 | 新窗口打开,预览还是下载交给浏览器 |
+| `.zip` | 不展示(归档类不解压也不下载,列出来只会干扰浏览) |
 
 ## 几个关键设计
 
-**只读,而且是真只读。** 阅读侧只有两个接口:`GET /api/docs/tree`(文件清单)和 `GET /api/docs/raw?path=`(单个文件)。没有编辑、没有删除、没有任何回写仓库的路径。
+**内容直接从你的磁盘读。** `pnpm run dev` 起的开发服务器挂了一个中间件(`tools/docs-server.mjs`),把 `/api/docs/tree`(列目录)与 `/api/docs/raw`(读文件)指向 `.env` 里的 `DOCS_DIR`。整个后端就这一个文件。
 
-**先同步到 Cloudflare,之后只读云端副本。** 内容不是实时拉取的:`pnpm run sync` 把你本机的文档目录推送到 Cloudflare D1,阅读时只读这份副本,快且稳定,也完全不依赖任何外部服务。
-
-**为什么同步要从本机发起(而不是让服务端去 Gitee 取)。** 三条网络路径都实测过,没有一条可靠:
+**为什么不做成能部署到 Cloudflare 的网站。** 部署在 Cloudflare 的网页跑在 Cloudflare 的机器上,**永远读不到你本机的磁盘**;要让线上能读,就必须先把内容上传到云端。而上传说到底要有个地方把仓库内容取出来 —— 这一环三条路我都实测过,没有一条可用:
 
 | 取数方 | 结果 |
 |---|---|
@@ -29,22 +42,13 @@
 | 浏览器 fetch → gitee.com | **403**(Gitee 的 WAF 拦浏览器) |
 | 本机 Node 连续请求 → gitee.com | 前 150 个成功,**之后被风控限流成 403** |
 
-而文档本来就在你自己的机器上:`git pull` 之后跑一次脚本就行 —— 不碰网络、不受限流,连令牌都不需要了。
+既然只需要在本机读,那就根本不需要取数 —— 直接读文件。这条弯路的过程记在 PLAN.md 里。
 
-**增量同步,而且是零写入的那种。** 每个文件按**内容自身的 git blob 哈希**寻址:没变就不写任何东西。实测第一次全量 789 个文件约 25 秒,之后再跑是「0 个需要上传」、秒级完成;本地删掉的文件也会在收尾时从云端一并清理。
-
-**中文编码不会乱码。** 这个仓库里 2022 年前后的一批 SQL 是 GBK 编码的。同步是**字节忠实**的(原样入库),服务端探测出非 UTF-8 后如实声明 `charset=gb18030`,前端按声明的编码解码。这里有个坑值得记一笔:Fetch 规范的 `response.text()` **一律按 UTF-8 解码、完全无视响应头里的 charset**,所以读取端是自己读 `arrayBuffer()` 再用 `TextDecoder` 解码的。
+**中文编码不会乱码。** 这个仓库里 2022 年前后的一批 SQL 是 GBK 的。服务端探测出非 UTF-8 后如实声明 `charset=gb18030`,前端按声明的编码解码。这里有个坑值得记一笔:Fetch 规范的 `response.text()` **一律按 UTF-8 解码、完全无视响应头里的 charset**,所以 `src/utils/api.ts` 是自己读 `arrayBuffer()` 再用 `TextDecoder` 解码的。
 
 **Mermaid 图点击即全屏。** 正文里的图按「横向永不溢出 → 尽量整屏显示 → 最后才守可读下限」自适应;点一下打开全屏查看器,可拖拽平移、滚轮缩放(锚定光标),点击或 ESC 关闭。mermaid 本体约 1.4 MB,只在真的遇到图时才按需下载。
 
 **字体是显式钉死的等宽字体。** 全站 Maple Mono NF CN,并且不依赖任何框架的间接传递:`@theme` 显式设 `--default-font-family`、`@layer base` 直接给 `html` 定字体、表单控件强制继承(浏览器默认会给它们另一套 UI 字体,是"字体看起来不对"最常见的原因)、`index.html` 预加载 400 字重以缩短 `font-display: swap` 期间显示系统字体的窗口。
-
-
-**访问码锁。** 打开先过全屏锁屏,校验全在服务端(PBKDF2-SHA256 + 可撤销会话),`/api/docs/*` 未解锁一律 401;记住 7 天,顶栏「上锁」一键让所有设备的旧 cookie 立刻失效。忘记访问码可到 Cloudflare D1 手动重置。
-
-**路由用查询串而不是 hash。** 当前文档是 `?doc=<编码后的仓库路径>`,这样 Markdown 里的标题锚点(比如本仓库 README 自己的 `[一、设计理念](#一设计理念)` 目录)才能正常工作;hash 路由会和锚点互相冲掉。
-
-**本地偏好只存 localStorage**(目录展开状态、栏宽、深浅色),不会同步到其它设备 —— 这个应用刻意不为此引入数据库。
 
 ## 技术栈
 
@@ -52,63 +56,21 @@
 |---|---|
 | 前端 | Vite 8 + React 18 + TypeScript(严格模式) |
 | 样式 | Tailwind CSS v4 + daisyUI 5(浅色 `mycal` / 深色 `dim`) |
-| 后端 | Cloudflare Worker(`worker/`,自写轻路由、无框架) |
-| 数据库 | Cloudflare D1(SQLite):访问码锁 + **同步进来的文档副本**(按内容哈希寻址 + 512KB 分块) |
+| 后端 | 无。仅一个 Vite 中间件读本机目录(`tools/docs-server.mjs`) |
 | Markdown | markdown-it 15 + highlight.js 11(按需注册语言)+ KaTeX + DOMPurify |
 | 图形 | Mermaid 11(动态加载,约 1.4 MB,只在遇到图时才下载) |
-| 其它渲染 | epubjs(EPUB,懒加载) |
+| 电子书 | epubjs(动态加载) |
 | 字体 | Maple Mono NF CN 自托管 GB2312 子集(4 字重,约 6.7 MiB),显式钉死为全站字体 |
-
-## 本地开发
-
-```bash
-pnpm install
-pnpm db:migrate:local     # 建表(含文档存储用的三张表)
-
-# 复制模板并填本地文档目录(不需要任何令牌)
-copy .dev.vars.example .dev.vars
-#   DOCS_DIR=C:\03Docs\my-docs
-#   SYNC_URL=https://你的worker地址     # 同步到线上时填;留空则同步到本地开发服务器
-#   SYNC_PASSWORD=你的访问码
-
-pnpm run dev              # http://localhost:5173
-```
-
-**同步**(先 `git pull`,`DOCS_DIR` 里的内容才会是最新的):
-
-```powershell
-# 有 Node 18+ 的机器:
-pnpm run sync
-
-# 没有 Node(或版本太老)—— 用 Windows 自带的 PowerShell,什么都不用装:
-tools\sync-docs.ps1
-# 也可以直接双击项目根目录的 sync.cmd
-```
-
-首次打开会提示「仓库尚未同步」,同步一次即可。脚本是增量的:没变的文件一个字节都不传,
-所以**重复跑是安全的**;它还会在结束前回读服务端清单与本地对账,缺文件直接点名。
-
-> Windows 上 `pnpm db:migrate:local` 若报 “Wrangler requires at least Node.js v22”,是 PATH 里的 Node 太老;用 Node 22+ 的目录前置 PATH 再执行。
-> 整个项目需要 Node 18+(Vite 8 更高);若机器上只有老版本 Node,同步这条可以用 `tools\sync-docs.ps1` 绕开。
-
-## 部署
-
-推送 GitHub 后由 Cloudflare 的 GitHub 集成自动构建部署。生产环境的令牌用 `wrangler secret put GITEE_TOKEN` 单独配置,不进仓库。
 
 ## 目录结构
 
 ```
-worker/
-  index.ts      路由入口:锁 + 两个文档接口
-  docs.ts       Gitee 取数层(文件树、按类型分流的三级回退、路径校验)
-  lock.ts       访问码锁(PBKDF2、可撤销会话、防爆破)
-  db.ts         D1 访问(settings / auth_sessions)
-  http.ts       HttpError 与 JSON 响应工具
-src/
-  App.tsx       锁屏门 + 工作台外壳
-  components/   DocTree 目录树、ReaderPane 分发、各格式视图
-  hooks/        useDocs(数据)、useDocRoute(路由)、useSidebarWidth(栏宽)
-  utils/        markdown 渲染、highlight 高亮、tree 建树、fileKind 分类、storage、api
-migrations/     D1 表结构唯一事实源
-docs/sql/       需要手动在 Cloudflare Console 执行的脚本
+src/            前端(React)
+  components/   阅读区各视图、目录树、Mermaid 全屏查看器
+  hooks/        数据获取、路由、栏宽
+  utils/        Markdown 管线、高亮、Mermaid 尺寸、文件分类
+tools/
+  docs-server.mjs   本地文档服务(Vite 中间件,唯一的"后端")
+  subset_fonts.py   重新生成字体子集
+public/fonts/   提交进仓库的字体子集
 ```
