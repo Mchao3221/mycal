@@ -22,7 +22,7 @@ MyDocs —「只读文档阅读器」(v0.7.0)。左侧目录树 + 右侧阅读�
 
 ```bash
 pnpm install            # 包管理器是 pnpm v11(packageManager 字段固定),不要用 npm
-pnpm run dev            # 开发:http://localhost:5173
+pnpm run dev            # 开发:http://localhost:13627
 pnpm run build          # tsc --noEmit(只查 src/)→ vite build
 pnpm run preview        # 构建后本地预览生产形态(同一个文档服务也会挂上)
 ```
@@ -34,14 +34,19 @@ pnpm run preview        # 构建后本地预览生产形态(同一个文档服�
 
 ## 配置
 
-配置只有一个环境变量,放在项目根目录的 `.env`(已被 `.gitignore` 忽略;模板见 `.env.example`):
+配置只有两个环境变量,放在项目根目录的 `.env`(已被 `.gitignore` 忽略;模板见 `.env.example`):
 
 ```
 DOCS_DIR=C:\03Docs\my-docs     # 要阅读的文档目录(绝对路径)
+PORT=13627                     # 开发服务器端口(可选,默认就是 13627)
 ```
 
-不设置时默认 `C:\03Docs\my-docs`(`vite.config.ts` 里用 `loadEnv(mode, cwd, '')` 读进来)。
+不设置时用默认值(`vite.config.ts` 里用 `loadEnv(mode, cwd, '')` 读进来)。
 改了文件**不用重启**,点顶栏「重新加载」即可重新扫描。
+
+**端口为什么是 13627**:刻意避开 3000 / 5173 / 8080 这些热门开发端口,免得以后和别的工具撞。
+`server.strictPort` 与 `preview.strictPort` 都是 `true`:**端口被占时直接报错退出,不会悄悄挪到下一个端口** ——
+悄悄换端口会让书签和你记着的地址失效,那是比"端口被占"更难察觉的一种冲突。
 
 ## 架构要点
 

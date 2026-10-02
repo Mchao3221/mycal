@@ -10,7 +10,7 @@ pnpm install
 # 复制模板,填上你的文档目录(不填默认就是 C:\03Docs\my-docs)
 copy .env.example .env
 
-pnpm run dev            # 打开 http://localhost:5173
+pnpm run dev            # 打开 http://localhost:13627
 ```
 
 就这三步。没有数据库、没有云端、没有访问码、没有同步。
