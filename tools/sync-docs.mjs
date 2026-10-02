@@ -216,36 +216,57 @@ async function main() {
   log(`\r  本地共 ${all.length} 个文件,其中 ${need.length} 个需要上传(未变 ${unchanged} 个),rev ${rev.slice(0, 8)}`)
   log('')
 
-  if (need.length > 0) process.stdout.write('  上传中…')
+  const sleep = ms => new Promise(r => setTimeout(r, ms))
   let uploaded = 0
-  const failed = []
-  let cursor = 0
 
-  const worker = async () => {
-    for (;;) {
-      const i = cursor++
-      if (i >= need.length) return
-      const f = need[i]
-      try {
-        const bytes = readFileSync(f.full)
-        const res = await appFetch(`/api/sync/put?path=${enc(f.rel)}&sha=${f.sha}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/octet-stream' },
-          body: bytes,
-        })
-        if (!res.ok) throw new Error(`HTTP ${res.status} ${(await res.text()).slice(0, 120)}`)
-        uploaded += 1
-      } catch (err) {
-        failed.push({ path: f.rel, error: err.message })
-      }
-      if ((uploaded + failed.length) % 25 === 0 || uploaded + failed.length === need.length) {
-        const secs = ((Date.now() - started) / 1000).toFixed(0)
-        process.stdout.write(`\r  已上传 ${uploaded + failed.length}/${need.length}  失败 ${failed.length}  ${secs}s   `)
-      }
-    }
+  /** 跑一轮上传,返回这一轮仍失败的文件(保留原对象,方便下一轮重试) */
+  const runPass = async items => {
+    const bad = []
+    let cursor = 0
+    let doneThisPass = 0
+    await Promise.all(
+      Array.from({ length: Math.min(CONCURRENCY, items.length) }, async () => {
+        for (;;) {
+          const idx = cursor++
+          if (idx >= items.length) return
+          const f = items[idx]
+          try {
+            const bytes = readFileSync(f.full)
+            const res = await appFetch(`/api/sync/put?path=${enc(f.rel)}&sha=${f.sha}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/octet-stream' },
+              body: bytes,
+            })
+            if (!res.ok) throw new Error(`HTTP ${res.status} ${(await res.text()).slice(0, 120)}`)
+            uploaded += 1
+          } catch (err) {
+            bad.push({ ...f, error: err.message })
+          }
+          doneThisPass += 1
+          if (doneThisPass % 25 === 0 || doneThisPass >= items.length) {
+            const secs = ((Date.now() - started) / 1000).toFixed(0)
+            process.stdout.write(`\r  已上传 ${uploaded}  本轮进度 ${doneThisPass}/${items.length}  失败 ${bad.length}  ${secs}s   `)
+          }
+        }
+      }),
+    )
+    return bad
   }
 
-  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, need.length) }, worker))
+  // 失败多半是网络抖动或云端一瞬间的限流,重试两轮通常就干净了。
+  // 之前只跑一轮:一旦中途大面积失败,收尾照样会执行,结果就是"应用里只显示了一部分文件"
+  // 而使用者毫不知情 —— 所以现在必须重试,并且下面还要做一次上传后自检。
+  if (need.length > 0) process.stdout.write('  上传中…')
+  let pending = need
+  let failed = []
+  for (let attempt = 1; attempt <= 3 && pending.length > 0; attempt++) {
+    if (attempt > 1) {
+      log(`\n  第 ${attempt} 轮:重试 ${pending.length} 个…`)
+      await sleep(1000 * (attempt - 1))
+    }
+    failed = await runPass(pending)
+    pending = failed
+  }
   if (need.length > 0) process.stdout.write('\n')
 
   process.stdout.write('  收尾中…')
@@ -257,11 +278,32 @@ async function main() {
   if (!fin.ok) fail(`收尾失败:HTTP ${fin.status} ${await fin.text()}`)
   const result = await fin.json()
 
-  log(`\r  完成:上传 ${uploaded} 个,删除 ${result.removed} 个,服务端现有 ${result.fileCount} 个  `)
+  // ---- 上传后自检:拿服务端清单与本地逐一对,少了什么直接点名 ----
+  // 这一步是这次补上的关键:以后"应用里文件不全"能自己说话,不必靠猜。
+  const after = await (await appFetch('/api/docs/tree')).json()
+  const have = new Set(after.files.map(f => f.path))
+  const missing = all.filter(f => !have.has(f.rel)).map(f => f.rel)
+
+  log(`\r  完成:上传 ${uploaded} 个,删除 ${result.removed} 个  `)
+  log(`  服务端现有 ${after.files.length} 个 / 本地 ${all.length} 个`)
   log(`  用时 ${((Date.now() - started) / 1000).toFixed(0)} 秒`)
+
+  if (missing.length === 0) {
+    log('  自检:两边文件清单完全一致 ✅')
+  } else {
+    log('')
+    log(`  ⚠️ 自检发现服务端还缺 ${missing.length} 个文件 —— 应用里会看不到它们:`)
+    for (const p of missing.slice(0, 10)) log(`     ${p}`)
+    if (missing.length > 10) log(`     …还有 ${missing.length - 10} 个`)
+    log('  再跑一次本命令即可续传(已传成功的不会重复上传)。')
+    process.exitCode = 1
+  }
+
   if (failed.length > 0) {
-    log(`\n有 ${failed.length} 个文件失败(重跑本命令即可续传):`)
-    for (const f of failed.slice(0, 10)) log(`  ${f.path} → ${f.error}`)
+    log('')
+    log(`  ⚠️ 有 ${failed.length} 个文件三轮都没传上去,失败原因:`)
+    for (const f of failed.slice(0, 10)) log(`     ${f.rel} → ${f.error}`)
+    if (failed.length > 10) log(`     …还有 ${failed.length - 10} 个`)
     process.exitCode = 1
   }
 }
