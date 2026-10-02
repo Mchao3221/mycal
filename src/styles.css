@@ -466,8 +466,10 @@
 
   /* ---------- Mermaid ---------- */
   /* 尺寸由 src/utils/mermaid.ts 按「宽度适应 + 高度压进视口 + 可读下限」算好写到 svg 上,
-     这里的 max-height 只是最后一道保险,防止 JS 没跑起来时图把整页撑爆。 */
+     这里的 max-height 只是最后一道保险,防止 JS 没跑起来时图把整页撑爆。
+     点击图会打开全屏查看器(MermaidLightbox),拖拽平移与缩放都在那里做。 */
   .md-body .mermaid-block {
+    position: relative;
     margin: 1.3em 0;
     border: 1px solid var(--color-base-300);
     border-radius: var(--radius-field);
@@ -486,12 +488,38 @@
     display: block;
     cursor: zoom-in;
   }
-  .md-body .mermaid-block.is-natural .mermaid-canvas svg {
-    cursor: zoom-out;
-  }
   /* 触到缩放下限时图比容器宽,从左对齐开始滚,别把开头藏在居中留白里 */
   .md-body .mermaid-block.is-oversized .mermaid-canvas {
     justify-content: flex-start;
+  }
+  /* 「点击全屏」提示:只在悬停时出现,平时不占版面。
+     只有 zoom-in 光标的话,用户不一定知道图能点开。 */
+  .md-body .mermaid-block.is-rendered::after {
+    content: "点击全屏查看";
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    padding: 2px 8px;
+    border-radius: 9999px;
+    font-size: 10.5px;
+    background: color-mix(in oklab, var(--color-base-content) 10%, transparent);
+    color: color-mix(in oklab, var(--color-base-content) 60%, transparent);
+    opacity: 0;
+    transition: opacity 0.15s;
+    pointer-events: none;
+  }
+  .md-body .mermaid-block.is-rendered:hover::after {
+    opacity: 1;
+  }
+
+  /* ---------- Mermaid 全屏查看器 ---------- */
+  /* 平移与缩放靠外层 div 的 transform,transform-origin 默认就是中心,正是缩放锚点需要的 */
+  .mm-lightbox-svg {
+    transform-origin: center center;
+    will-change: transform;
+  }
+  .mm-lightbox-svg svg {
+    display: block;
   }
   /* 渲染前的占位与渲染失败时的退化内容:源码本身 */
   .md-body .mermaid-source {

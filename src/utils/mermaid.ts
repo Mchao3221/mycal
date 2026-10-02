@@ -64,6 +64,30 @@ export function currentMermaidTheme(): MermaidTheme {
 }
 
 /**
+ * 点击图时把 SVG 标记与自然尺寸交给调用方(由 MarkdownView 弹全屏查看器)。
+ * 用 outerHTML 克隆而不是搬走原节点:正文里那张图要保持原样,关掉全屏就还是它。
+ */
+export interface MermaidActivatePayload {
+  svg: string
+  width: number
+  height: number
+}
+
+export interface HydrateOptions {
+  onActivate?: (payload: MermaidActivatePayload) => void
+}
+
+/** 读取一张图的自然尺寸(viewBox 是 mermaid 一定会写的,且不受当前 CSS 尺寸影响) */
+function naturalSize(svg: SVGSVGElement): { width: number; height: number } {
+  const vb = svg.viewBox?.baseVal
+  if (vb && vb.width > 0 && vb.height > 0) return { width: vb.width, height: vb.height }
+  return {
+    width: Number(svg.getAttribute('width')) || FALLBACK_WIDTH,
+    height: Number(svg.getAttribute('height')) || FALLBACK_HEIGHT,
+  }
+}
+
+/**
  * 算出该把图缩到多少。抽成纯函数是为了能脱离 DOM 单独验证 ——
  * 「一屏放得下」和「不能小到看不清」这两条要求最后都落在这个算式上。
  *
@@ -102,15 +126,14 @@ export function computeFitScale(
 /**
  * 让图在一个屏幕内放得下。
  * natural 尺寸取自 viewBox —— mermaid 一定会写它,而且它不受当前 CSS 尺寸影响。
+ * 只负责正文里的尺寸;要看原尺寸是点开全屏查看器(见 MermaidLightbox)。
  */
-function fitBlock(block: HTMLElement, maxHeight: number, useNatural: boolean): void {
+function fitBlock(block: HTMLElement, maxHeight: number): void {
   const svg = block.querySelector<SVGSVGElement>('.mermaid-canvas svg')
   const canvas = block.querySelector<HTMLElement>('.mermaid-canvas')
   if (!svg || !canvas) return
 
-  const vb = svg.viewBox?.baseVal
-  const natW = vb && vb.width > 0 ? vb.width : Number(svg.getAttribute('width')) || FALLBACK_WIDTH
-  const natH = vb && vb.height > 0 ? vb.height : Number(svg.getAttribute('height')) || FALLBACK_HEIGHT
+  const { width: natW, height: natH } = naturalSize(svg)
 
   // canvas 的可用宽度:clientWidth 含内边距,要减掉,否则会算出略微溢出、出现横向滚动条
   const cs = getComputedStyle(canvas)
@@ -118,9 +141,7 @@ function fitBlock(block: HTMLElement, maxHeight: number, useNatural: boolean): v
     canvas.clientWidth - (Number.parseFloat(cs.paddingLeft) || 0) - (Number.parseFloat(cs.paddingRight) || 0)
   const availW = Math.max(160, inner || block.clientWidth || FALLBACK_WIDTH)
 
-  const { scale, clamped } = useNatural
-    ? { scale: 1, clamped: false }
-    : computeFitScale(natW, natH, availW, maxHeight)
+  const { scale, clamped } = computeFitScale(natW, natH, availW, maxHeight)
 
   svg.setAttribute('width', String(Math.round(natW * scale)))
   svg.setAttribute('height', String(Math.round(natH * scale)))
@@ -129,17 +150,11 @@ function fitBlock(block: HTMLElement, maxHeight: number, useNatural: boolean): v
   svg.style.height = 'auto'
 
   block.classList.toggle('is-oversized', clamped)
-  block.classList.toggle('is-natural', useNatural)
   block.dataset.mermaidScale = scale.toFixed(2)
 }
 
 function viewportLimit(): number {
   return Math.max(240, Math.round(window.innerHeight * MAX_VIEWPORT_HEIGHT_RATIO))
-}
-
-/** 点击图:在「适应」与「原始尺寸」之间切换 */
-function toggleNatural(block: HTMLElement): void {
-  fitBlock(block, viewportLimit(), !block.classList.contains('is-natural'))
 }
 
 /**
@@ -150,7 +165,7 @@ function toggleNatural(block: HTMLElement): void {
  *   - 切换主题时把它重新渲染一遍即可,不需要回到 Markdown 原文再解析一次。
  * 失败要逐块隔离:一张图有问题不能让整篇文档的图都渲染不出来。
  */
-export async function hydrateMermaidBlocks(root: HTMLElement): Promise<void> {
+export async function hydrateMermaidBlocks(root: HTMLElement, opts: HydrateOptions = {}): Promise<void> {
   const blocks = Array.from(root.querySelectorAll<HTMLElement>('.mermaid-block'))
   if (blocks.length === 0) return
 
@@ -169,14 +184,20 @@ export async function hydrateMermaidBlocks(root: HTMLElement): Promise<void> {
         canvas = document.createElement('div')
         canvas.className = 'mermaid-canvas'
         block.appendChild(canvas)
-        // 点击切换「适应 / 原始尺寸」,用 title 提示,不额外占版面
-        canvas.title = '点击切换:适应宽度 / 原始尺寸'
-        canvas.addEventListener('click', () => toggleNatural(block))
+        canvas.title = '点击全屏查看(可拖拽与缩放)'
+        // 点击进全屏查看器。这里只负责把标记和自然尺寸交出去,
+        // 全屏的平移/缩放/关闭都由 MermaidLightbox 负责。
+        canvas.addEventListener('click', () => {
+          const svgEl = canvas?.querySelector<SVGSVGElement>('svg')
+          if (!svgEl || !opts.onActivate) return
+          const { width, height } = naturalSize(svgEl)
+          opts.onActivate({ svg: svgEl.outerHTML, width, height })
+        })
       }
       canvas.innerHTML = svg
       block.classList.remove('is-failed')
       block.classList.add('is-rendered')
-      fitBlock(block, maxHeight, false)
+      fitBlock(block, maxHeight)
     } catch (err) {
       // 源码本来就还在,加个类让样式把它显示出来即可
       block.classList.remove('is-rendered')
@@ -190,6 +211,6 @@ export async function hydrateMermaidBlocks(root: HTMLElement): Promise<void> {
 export function refitMermaidBlocks(root: HTMLElement): void {
   const maxHeight = viewportLimit()
   for (const block of root.querySelectorAll<HTMLElement>('.mermaid-block.is-rendered')) {
-    fitBlock(block, maxHeight, block.classList.contains('is-natural'))
+    fitBlock(block, maxHeight)
   }
 }

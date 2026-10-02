@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { renderMarkdown } from '../utils/markdown'
 import { formatSize, rawUrl } from '../utils/fileKind'
 import { hydrateMermaidBlocks, refitMermaidBlocks } from '../utils/mermaid'
+import type { MermaidActivatePayload } from '../utils/mermaid'
+import { MermaidLightbox } from './MermaidLightbox'
 import { navigateToDoc } from '../hooks/useDocRoute'
 
 interface Props {
@@ -46,12 +48,15 @@ export function MarkdownView({ path, text, size, sha, knownPaths }: Props) {
     return () => observer.disconnect()
   }, [])
 
+  /** 当前全屏查看的图形;null = 没打开 */
+  const [zoomed, setZoomed] = useState<MermaidActivatePayload | null>(null)
+
   useEffect(() => {
     const body = bodyRef.current
     if (!body) return
     // hydrate 会先同步抓取当前这批 .mermaid-block 再逐个 await 渲染,
     // 所以就算中途换了文档,晚到的结果也只会写进已经被 React 摘掉的旧节点,不会串图。
-    void hydrateMermaidBlocks(body).catch(() => {
+    void hydrateMermaidBlocks(body, { onActivate: setZoomed }).catch(() => {
       /* 单块失败已在 hydrate 内部隔离处理,这里只兜住预期外的异常 */
     })
     // 窗口尺寸变化会改变可用宽高,只重算缩放(不重新渲染 SVG),代价很低
@@ -61,6 +66,13 @@ export function MarkdownView({ path, text, size, sha, knownPaths }: Props) {
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [doc.html, theme])
+
+  // 换文档时把全屏查看器关掉,否则新文档会顶着一张旧图的全屏遮罩
+  useEffect(() => {
+    setZoomed(null)
+  }, [path])
+
+  const closeZoom = useCallback(() => setZoomed(null), [])
 
   /**
    * 支持 Markdown 里原生的标题锚点(仓库 README 自己就有 `[一、设计理念](#一设计理念)` 这种目录)。
@@ -185,6 +197,10 @@ export function MarkdownView({ path, text, size, sha, knownPaths }: Props) {
           <div dangerouslySetInnerHTML={{ __html: doc.html }} />
         </article>
       </div>
+
+      {zoomed && (
+        <MermaidLightbox svg={zoomed.svg} width={zoomed.width} height={zoomed.height} onClose={closeZoom} />
+      )}
     </div>
   )
 }

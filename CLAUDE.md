@@ -67,7 +67,12 @@ pnpm run deploy         # build → 远端 D1 迁移 → wrangler deploy(顺序�
   - mermaid 本身及图表类型是**动态 import**,合计约 1.4 MB 独立 chunk,不打开带图的文档就一个字节都不下载;
   - 源码始终留在 `.mermaid-source` 里:渲染失败时它就是可读的退化内容,切换主题重渲染时也不必回到 Markdown 原文再解析;
   - `securityLevel: 'strict'`,并且单块失败要隔离,一张图有问题不能让整篇的图都渲染不出来;
-  - **尺寸策略是这次需求的核心**,全部逻辑在纯函数 `computeFitScale` 里(可脱离 DOM 单测)。优先级:**① 横向永不溢出**(阅读是纵向的,横向滚动条最难受)→ ② 尽量整屏显示(宽高同时约束)→ ③ 最后才守可读下限 `MIN_SCALE = 0.55`,高度实在放不下时允许纵向滚动但字号不再缩;小图不放大;点击图可在「适应 / 原始尺寸」间切换。改这些常量前先用纯函数跑一遍各尺寸场景。
+  - **尺寸策略**:全部逻辑在纯函数 `computeFitScale` 里(可脱离 DOM 单测)。优先级:**① 横向永不溢出**(阅读是纵向的,横向滚动条最难受)→ ② 尽量整屏显示(宽高同时约束)→ ③ 最后才守可读下限 `MIN_SCALE = 0.55`,高度实在放不下时允许纵向滚动但字号不再缩;小图不放大。改这些常量前先用纯函数跑一遍各尺寸场景。
+  - **交互**:点击正文里的图 → 打开全屏查看器 `src/components/MermaidLightbox.tsx`(拖拽平移、滚轮缩放锚定光标、点击/ESC 关闭)。几个必须记住的点:
+    - 滚轮**必须手动 `addEventListener('wheel', fn, { passive: false })`** —— React 的 `onWheel` 是被动监听,里面 `preventDefault()` 无效,页面会跟着滚;
+    - **点击与拖拽必须区分**:按下到松开位移小于 4px 才算点击(否则一拖就关);
+    - 克隆进全屏的 SVG 带着正文里被缩小过的 `width/height`,**必须按 viewBox 重置为自然尺寸**,否则全屏看到的是"放大的缩略图";
+    - 打开期间锁 `document.body.style.overflow`,关闭时还原。
 - **Markdown 管线在 `src/utils/markdown.ts`**:markdown-it + GFM 任务列表 + KaTeX(`$...$` 与 `$$...$$`)+ Obsidian 方言(wikilink / 嵌入 / callout / frontmatter / `==高亮==`)+ 资源路径重写 + **DOMPurify 消毒**。对外只暴露 `renderMarkdown(source, { docPath, knownPaths })`。**允许内嵌 HTML**,所以消毒是必需的,改这里时不要把 DOMPurify 摘掉。
 - **代码高亮只有一个实例**:`src/utils/highlight.ts` 用 `highlight.js/lib/core` 按需注册十几种语言(不要改成 `import hljs from 'highlight.js'`,那会把 190 多种语言全打进包,约 1MB)。Markdown 渲染与源码视图共用 `highlightBlock`。**颜色不在 JS 里**,由 `src/styles.css` 按 `[data-theme]` 手写 `.hljs-*` 规则(所以也不能 import hljs 的主题 CSS)。
 - **本地偏好一律 localStorage**(`src/utils/storage.ts`,统一 `mydocs:` 前缀):目录展开状态、栏宽、主题。项目已决定不为阅读进度引入 D1,所以这些不同步到其它设备。(早期版本还存过"最近阅读",该功能已按用户要求去掉;旧数据留在 `mydocs:recent` 里不影响任何逻辑。)
