@@ -1,9 +1,10 @@
-// mycal v0.5.0 —— 只读文档阅读器后端。
-// 路由风格沿用自写轻路由(无框架):正则/相等匹配 + method 判断,未匹配的 /api/* 落到 404,
+// mycal v0.6.0 —— 只读文档阅读器后端。
+// 路由风格沿用自写轻路由(无框架):相等匹配 + method 判断,未匹配的 /api/* 落到 404,
 // 非 /api/ 请求交给 wrangler.jsonc 的 assets.not_found_handling 走 SPA 回退。
 import { HttpError, json, readBody } from './http'
 import { clearSessionCookie, lockNow, normPassword, setupLock, unlockLock, verifySession } from './lock'
-import { fetchFile, fetchTree, normPath } from './docs'
+import { handleFile, handleTree } from './docs'
+import { handleFiles, handleFinish, handlePlan, handleStatus } from './sync'
 import type { Env } from './env'
 
 /** 锁自身的路由:未解锁也可访问;其余 /api/* 一律先验会话 */
@@ -68,18 +69,31 @@ async function route(req: Request, env: Env, path: string, method: string): Prom
     return json({ ok: true }, 200, { 'Set-Cookie': clearSessionCookie(secure) })
   }
 
-  // ---- 文档仓库(只读) ----
+  // ---- 阅读(只读本地副本) ----
   if (path === '/api/docs/tree' && method === 'GET') {
-    const fresh = new URL(req.url).searchParams.get('refresh') === '1'
-    return json(await fetchTree(env, fresh))
+    return json(await handleTree(env))
   }
 
   if (path === '/api/docs/raw' && method === 'GET') {
     const params = new URL(req.url).searchParams
-    const file = normPath(params.get('path'))
-    // sha 由前端从文件树里带过来:有它就不必为了"路径换 sha"再拉一次完整文件树,
-    // 打开一个文件最多只剩一次上游请求。sha 的格式校验在 fetchFile 里做。
-    return await fetchFile(env, file, params.get('sha') ?? undefined)
+    return await handleFile(env, params.get('path'), params.get('sha') ?? undefined)
+  }
+
+  // ---- 同步(把仓库搬进 D1) ----
+  if (path === '/api/sync/status' && method === 'GET') {
+    return json(await handleStatus(env))
+  }
+
+  if (path === '/api/sync/plan' && method === 'POST') {
+    return json(await handlePlan(env))
+  }
+
+  if (path === '/api/sync/files' && method === 'POST') {
+    return json(await handleFiles(env, await readBody<unknown>(req)))
+  }
+
+  if (path === '/api/sync/finish' && method === 'POST') {
+    return json(await handleFinish(env, await readBody<unknown>(req)))
   }
 
   throw new HttpError(404, '接口不存在')

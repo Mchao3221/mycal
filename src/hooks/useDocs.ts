@@ -4,36 +4,31 @@ import { isTextKind, rawUrl } from '../utils/fileKind'
 import type { DocsTree } from '../types'
 
 /**
- * 拉取仓库文件树。
- * 首次加载与手动刷新分开两个状态:手动刷新时保留旧树继续显示,
- * 否则每点一次刷新整棵目录树会闪一下白。
+ * 拉取文件清单。
+ * v0.6.0 起这份数据直接来自 D1 里的同步副本,不再实时回源 Gitee ——
+ * 所以它是快的、稳的,「刷新」按钮的语义也从「绕过缓存重拉」变成了「同步仓库」。
  */
 export function useDocsTree() {
   const [tree, setTree] = useState<DocsTree | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
 
-  const load = useCallback(async (fresh: boolean) => {
-    if (fresh) setRefreshing(true)
-    else setLoading(true)
+  const reload = useCallback(async () => {
     setError('')
     try {
-      const next = await api<DocsTree>(`/api/docs/tree${fresh ? '?refresh=1' : ''}`)
-      setTree(next)
+      setTree(await api<DocsTree>('/api/docs/tree'))
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
       setLoading(false)
-      setRefreshing(false)
     }
   }, [])
 
   useEffect(() => {
-    void load(false)
-  }, [load])
+    void reload()
+  }, [reload])
 
-  return { tree, error, loading, refreshing, reload: load }
+  return { tree, error, loading, reload }
 }
 
 /**

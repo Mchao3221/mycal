@@ -9,17 +9,49 @@ export interface TreeFile {
   sha: string
 }
 
-/** GET /api/docs/tree 的响应 */
+/** GET /api/docs/tree 的响应(v0.6.0 起读的是同步进 D1 的本地副本,不再是实时回源) */
 export interface DocsTree {
   owner: string
   repo: string
   branch: string
-  /** 分支最新 commit sha,内容一变它就变,可当版本号 */
+  /** 最近一次同步到的 commit sha */
   rev: string
+  /** 最近一次同步完成时间;0 表示从未同步过 */
+  syncedAt: number
   fetchedAt: number
-  /** Gitee 侧树被截断(文件过多)时为 true */
-  truncated: boolean
+  /** 全部文件的总字节数 */
+  totalBytes: number
   files: TreeFile[]
+}
+
+/** 同步状态(GET /api/sync/status) */
+export interface SyncStatus {
+  owner: string
+  repo: string
+  branch: string
+  rev: string
+  syncedAt: number
+  fileCount: number
+  totalBytes: number
+}
+
+/** 同步第一步:远端树与本地的差异 */
+export interface SyncPlan {
+  rev: string
+  total: number
+  need: { path: string; sha: string; size: number }[]
+  unchanged: number
+  removed: number
+  paths: string[]
+}
+
+/** 同步第二步:一批文件的结果 */
+export interface SyncApplyResult {
+  saved: number
+  written: number
+  failed: { path: string; error: string }[]
+  more: boolean
+  diag: string
 }
 
 /** GET /api/lock/status 的响应 */
