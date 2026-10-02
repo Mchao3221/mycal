@@ -31,10 +31,22 @@ const IMMUTABLE_TTL_SEC = 31536000
  * 这个值不是拍脑袋来的:线上曾出现「打开一个 30K 的文件要几分钟」,而本地实测取数 10ms、
  * 渲染 <1ms —— 说明耗时全在 Cloudflare 到 Gitee 这一段。回退链在失败时最多要打 5 个上游请求
  * (contents → branches → trees → blobs → raw),每个都挂住的话就是几分钟。
- * 有了这个上限,最坏情况也是有界的,而且超时会作为「fetch 异常」写进诊断,
- * 一眼就能和「上游返回 4xx」区分开。
+ *
+ * 取值要两头兼顾:
+ *   - 太小(比如 8s)会把「只是慢、但能成」的请求直接掐断,把原本能用变成用不了;
+ *   - 太大又等于没设,挂住一次还是几分钟。
+ * 20s 是「容忍慢链路」与「把挂死截断」之间的折中,而且配合 networkDown 的快速收手,
+ * 最坏总耗时也就一个超时。需要调可以用 GITEE_TIMEOUT_MS 环境变量覆盖,不必改代码走一次 CI。
  */
-const UPSTREAM_TIMEOUT_MS = 8000
+const DEFAULT_UPSTREAM_TIMEOUT_MS = 20000
+
+/** 每次请求处理开始时按 env 设定 */
+let upstreamTimeoutMs = DEFAULT_UPSTREAM_TIMEOUT_MS
+
+function applyTimeout(env: Env): void {
+  const raw = Number.parseInt(env.GITEE_TIMEOUT_MS ?? '', 10)
+  upstreamTimeoutMs = Number.isFinite(raw) && raw >= 1000 && raw <= 120000 ? raw : DEFAULT_UPSTREAM_TIMEOUT_MS
+}
 
 interface RepoConf {
   owner: string
@@ -155,14 +167,14 @@ function diagText(): string {
 /** 带上限的上游请求;返回 null 表示这次尝试失败(原因已记入 diags) */
 async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response | null> {
   const ac = new AbortController()
-  const timer = setTimeout(() => ac.abort(), UPSTREAM_TIMEOUT_MS)
+  const timer = setTimeout(() => ac.abort(), upstreamTimeoutMs)
   try {
     return await fetch(url, { ...init, signal: ac.signal })
   } catch (err) {
     networkDown = true
     diags.push({
       step: 'fetch',
-      status: ac.signal.aborted ? `超时 ${UPSTREAM_TIMEOUT_MS}ms` : 'fetch 异常',
+      status: ac.signal.aborted ? `超时 ${upstreamTimeoutMs}ms` : 'fetch 异常',
       body: err instanceof Error ? err.message : String(err),
     })
     return null
@@ -224,6 +236,7 @@ export async function fetchTree(env: Env, fresh = false): Promise<DocsTree> {
   const conf = confOf(env)
   diags = []
   networkDown = false
+  applyTimeout(env)
 
   // 用分支接口换 commit sha:它比分支名精确(内容变了 sha 就变),可以安全地长缓存。
   // 换不到就退回分支名当 ref,并且两个 ref 都试一遍 —— 少一次「云端 502 只能靠猜」。
@@ -473,6 +486,7 @@ export async function fetchFile(env: Env, path: string, shaHint?: string): Promi
   const conf = confOf(env)
   diags = []
   networkDown = false
+  applyTimeout(env)
   const encoded = encodePath(path)
   const token = encodeURIComponent(conf.token)
   const ref = encodeURIComponent(conf.branch)

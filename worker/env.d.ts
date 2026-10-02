@@ -14,4 +14,9 @@ export interface Env {
   GITEE_OWNER?: string
   GITEE_REPO?: string
   GITEE_BRANCH?: string
+  /**
+   * 单个上游请求的超时(毫秒,1000~120000),默认 20000。
+   * 云端要调这个值时不必改代码:直接在 Cloudflare 控制台改环境变量即可。
+   */
+  GITEE_TIMEOUT_MS?: string
 }
