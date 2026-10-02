@@ -5,7 +5,7 @@
 //     这是无状态签名 token 做不到的(借电脑场景必须能真撤销);
 //  3. 会话 7 天有效,打开应用时剩余不足 3 天自动滑动续期;最多 5 台设备并存。
 // 仅依赖 Web API(WebCrypto)与 db.ts,Workers 运行时可直接执行。
-import { HttpError } from './ai'
+import { HttpError } from './http'
 import {
   clearSessions,
   createSessionRow,

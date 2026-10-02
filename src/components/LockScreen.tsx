@@ -8,8 +8,9 @@ interface Props {
 }
 
 /**
- * 全屏锁屏:未解锁时整页只渲染这一屏,连日历壳子都不出。
+ * 全屏锁屏:未解锁时整页只渲染这一屏,连目录壳子都不出。
  * 校验全部在服务端(worker/lock.ts),这里只是表单;429 冷却信息透传后端文案。
+ * 仓库本身是私有的,这层锁是第二道门 —— 少了它,拿到链接的人就能读全部笔记。
  */
 export function LockScreen({ mode, onUnlocked }: Props) {
   const [pwd, setPwd] = useState('')
@@ -61,19 +62,19 @@ export function LockScreen({ mode, onUnlocked }: Props) {
         }}
       >
         <div className="mb-5 flex items-center gap-2.5">
-          <span className="btn btn-primary btn-square btn-sm font-mono text-xs font-bold">M</span>
-          <span className="font-display text-lg font-semibold tracking-tight">MyCal</span>
-          <span className="badge badge-ghost badge-sm">私人健康日志</span>
+          <span className="btn btn-primary btn-square btn-sm font-mono text-xs font-bold">D</span>
+          <span className="font-display text-lg font-semibold tracking-tight">MyDocs</span>
+          <span className="badge badge-ghost badge-sm">只读阅读器</span>
         </div>
 
         {mode === 'setup' ? (
           <p className="mt-0 text-sm leading-relaxed text-base-content/60">
             首次使用,设置一个<b>访问码</b>。之后任何人打开本站,包括持有链接的人,
-            都必须先输入它才能看到数据。忘记访问码无法自助找回,需到 Cloudflare D1 手动重置。
+            都必须先输入它才能看到笔记。忘记访问码无法自助找回,需到 Cloudflare D1 手动重置。
           </p>
         ) : (
           <p className="mt-0 text-sm leading-relaxed text-base-content/60">
-            本应用已上锁,数据不会加载。请输入访问码解锁。
+            本应用已上锁,目录与正文都不会加载。请输入访问码解锁。
           </p>
         )}
 
@@ -101,7 +102,11 @@ export function LockScreen({ mode, onUnlocked }: Props) {
 
         {error && <p className="mb-0 mt-2 text-sm text-error">{error}</p>}
 
-        <button type="submit" className="btn btn-primary mt-5 w-full" disabled={busy || !pwd || (mode === 'setup' && !confirm)}>
+        <button
+          type="submit"
+          className="btn btn-primary mt-5 w-full"
+          disabled={busy || !pwd || (mode === 'setup' && !confirm)}
+        >
           {busy ? (
             <span className="inline-flex items-center gap-2">
               <span className="loading loading-spinner loading-xs" />

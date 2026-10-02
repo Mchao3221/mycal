@@ -12,5 +12,8 @@ onlyBuiltDependencies:
   - '@parcel/watcher'
 allowBuilds:
   '@parcel/watcher': true
+  # core-js / es5-ext 的安装脚本只打印捐赠横幅,不需要执行
+  core-js: false
+  es5-ext: false
   esbuild: true
   workerd: true

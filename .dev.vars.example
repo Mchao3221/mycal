@@ -1,0 +1,14 @@
+# 本地开发环境变量(复制本文件为 .dev.vars 后填写真实值)。
+# .dev.vars 已被 .gitignore 忽略,不会进仓库;生产环境用 wrangler secret put GITEE_TOKEN。
+#
+# ⚠️ 不要把真实令牌写在本文件里 —— 本文件是要提交进 Git 的模板!
+#
+# GITEE_TOKEN:Gitee 私人令牌,权限勾选「projects / 仓库代码」只读即可。
+#   生成入口:https://gitee.com/profile/personal_access_tokens
+#   仓库 chu-tianshu/my-docs 是私有的,不填令牌时 /api/docs/tree 会直接报错。
+GITEE_TOKEN=
+
+# 仓库坐标,留空即使用下列默认值。
+GITEE_OWNER=chu-tianshu
+GITEE_REPO=my-docs
+GITEE_BRANCH=master

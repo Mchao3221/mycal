@@ -3,12 +3,29 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>MyCal · 日常工作台</title>
+    <title>MyDocs · 只读文档阅读器</title>
+
+    <!--
+      预加载正文字体(400)。字体是 1.7 MiB,而 @font-face 用的是 font-display: swap,
+      不预加载的话首屏会先以系统字体(Windows 中文即微软雅黑)渲染,等字体到了才切换,
+      表现为"页面字体不是 Maple Mono"。
+      只预加载 400:正文占绝大多数;标题用的 600 字数少,不值得再压 1.7 MiB。
+      crossorigin 是必需的 —— 字体按规范走 CORS 模式取,漏了它预加载会被丢弃并变成两次下载。
+    -->
+    <link
+      rel="preload"
+      href="/fonts/maple-nf-cn-regular.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin="anonymous"
+    />
+
     <script>
-      // 主题偏好仅记录深浅色选择,与待办数据无关
+      // 在首帧之前定好主题,避免浅色闪一下再跳深色。
+      // key 要与 src/utils/storage.ts 的前缀 + App 里的 'theme' 保持一致(mydocs:theme)。
       try {
         document.documentElement.dataset.theme =
-          localStorage.getItem('mycal:theme') === 'dim' ? 'dim' : 'mycal'
+          localStorage.getItem('mydocs:theme') === 'dim' ? 'dim' : 'mycal'
       } catch (e) {}
     </script>
   </head>

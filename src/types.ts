@@ -1,108 +1,51 @@
-// 注:v0.4.1 起日程功能(todos/ICS)已整体移除。
+// 全局共享类型(v0.5.0 只读文档阅读器)。
+// 注意:前后端两套 tsconfig 不共享代码,worker 侧有自己的一份同名类型,改这里时留意别改错文件。
 
-// ---------- 访问码锁 ----------
+/** 目录树里单个文件(worker /api/docs/tree 返回) */
+export interface TreeFile {
+  /** 仓库内相对路径,正斜杠分隔 */
+  path: string
+  size: number
+  sha: string
+}
 
+/** GET /api/docs/tree 的响应 */
+export interface DocsTree {
+  owner: string
+  repo: string
+  branch: string
+  /** 分支最新 commit sha,内容一变它就变,可当版本号 */
+  rev: string
+  fetchedAt: number
+  /** Gitee 侧树被截断(文件过多)时为 true */
+  truncated: boolean
+  files: TreeFile[]
+}
+
+/** GET /api/lock/status 的响应 */
 export interface LockStatus {
   /** 是否已设置访问码(未设置先走设置流程) */
   isSet: boolean
   unlocked: boolean
 }
 
-// ---------- 当日流水 ----------
+/**
+ * 文件的预览方式。
+ * markdown = 渲染成图文;code = 只读高亮;image = 直接显示;
+ * epub = 在线阅读;external = 新窗口打开交给浏览器。
+ * 注:`.excalidraw` 已归入 external —— 画布渲染(官方包 1MB+)已整体移除。
+ */
+export type FileKind = 'markdown' | 'code' | 'image' | 'epub' | 'external'
 
-/** 事后记录「今天做了哪些事」,多条时间序,供 AI 汇总消化 */
-export interface JournalEntry {
-  id: string
-  text: string
-  createdAt: number
-}
-
-export type JournalStore = Record<string, JournalEntry[]>
-
-// ---------- 体重记录 ----------
-
-/** 一天一条,同日再录即覆盖(口径:晨起空腹) */
-export interface WeightEntry {
-  dateKey: string
-  weightKg: number
-  updatedAt: number
-}
-
-export type WeightStore = Record<string, WeightEntry>
-
-// ---------- 打卡日记 ----------
-
-export type HealthKind = 'diet' | 'exercise'
-export type MealSlot = 'breakfast' | 'lunch' | 'dinner' | 'snack'
-
-export interface HealthLog {
-  id: string
-  kind: HealthKind
-  text: string
-  /** 仅 diet 有 */
-  meal?: MealSlot
-  /** 千卡;null = 待 AI 估算 */
-  kcal: number | null
-  /** kcal 非空时有值:手动录入/修正,或 AI 估算 */
-  kcalSource?: 'ai' | 'manual'
-  createdAt: number
-}
-
-export interface HealthLogInput {
-  kind: HealthKind
-  text: string
-  meal?: MealSlot | null
-  kcal?: number | null
-}
-
-export type HealthStore = Record<string, HealthLog[]>
-
-// ---------- 健康档案 ----------
-
-export type ActivityLevel = 'sedentary' | 'light' | 'moderate' | 'high'
-export type Goal = 'lose' | 'maintain' | 'gain'
-
-export interface Profile {
-  sex: 'male' | 'female'
-  age: number
-  heightCm: number
-  /** 当前体重:由最新体重记录推导(档案不再手动填);无任何记录时为 null */
-  weightKg: number | null
-  targetWeightKg: number | null
-  activity: ActivityLevel
-  goal: Goal
-  updatedAt: number
-}
-
-// ---------- AI ----------
-
-export interface AiConfigInfo {
-  baseUrl: string
-  model: string
-  hasKey: boolean
-}
-
-export interface AiSummary {
-  dateKey: string
-  generatedAt: number
-  model: string
-  /** 摄入合计 */
-  intakeKcal: number
-  /** 运动消耗合计 */
-  exerciseKcal: number
-  bmr: number
-  tdee: number
-  /** 结合目标的建议摄入 */
-  targetKcal: number
-  /** 总消耗 = TDEE + 运动 */
-  burnKcal: number
-  /** 净差 = 摄入 - 总消耗,负数为亏空 */
-  netKcal: number
-  /** 净差折算体重(≈7700 kcal/kg),负=掉秤 */
-  weightDeltaKg: number
-  /** AI 也没估出热量的条数 */
-  pendingCount: number
-  comment: string
-  /** 汇总时采用的有效体重 */
-  weightKg?: number | null
+/** 目录树节点(由扁平路径在前端拼出来,git 不跟踪空目录,所以不会出现空节点) */
+export interface TreeNode {
+  name: string
+  /** 目录为自身路径,文件为完整路径 */
+  path: string
+  isDir: boolean
+  children: TreeNode[]
+  /** 文件字节数;目录为 0 */
+  size: number
+  /** 目录下(含所有子目录)的文件总数 */
+  fileCount: number
 }

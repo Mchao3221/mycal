@@ -1,9 +1,12 @@
 -- ============================================================
--- MyCal · 忘记访问码的恢复脚本 —— 远端 D1 Console(mycal_db)执行
+-- MyDocs · 忘记访问码的恢复脚本 —— 远端 D1 Console(mycal_db)执行
 -- 作用:清除访问码与所有会话,回到「首次打开设置访问码」的状态。
--- 数据(日程/流水/体重/打卡/档案/AI 配置)不受影响。
 -- 注意:执行瞬间所有设备都会被踢下线,需要重新设置访问码。
+--
+-- v0.5.0 起 D1 里只剩 settings 与 auth_sessions 两张表,
+-- 健康日志业务表已在迁移 0006 中 DROP,因此本脚本不会再影响任何文档数据
+-- (文档正文本来也不在 D1 里,而是实时来自 Gitee 仓库)。
 -- ============================================================
 
-DELETE FROM settings WHERE key IN ('lock.salt', 'lock.hash', 'lock.fails');
+DELETE FROM settings WHERE key IN ('lock.salt', 'lock.hash', 'lock.fails', '***');
 DELETE FROM auth_sessions;

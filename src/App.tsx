@@ -1,18 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Calendar } from './components/Calendar'
-import { DayView } from './components/DayView'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { DocTree } from './components/DocTree'
 import { LockScreen } from './components/LockScreen'
-import { ProfileModal } from './components/ProfileModal'
-import { AiConfigModal } from './components/AiConfigModal'
-import { WeightModal } from './components/WeightModal'
-import { Toasts, type ToastData } from './components/Toasts'
-import { WeightSparkline } from './components/WeightSparkline'
-import { useHealth } from './hooks/useHealth'
-import { useJournal } from './hooks/useJournal'
-import { useWeights } from './hooks/useWeights'
+import { ReaderPane } from './components/ReaderPane'
+import { useDocContent, useDocsTree } from './hooks/useDocs'
+import { navigateToDoc, useDocRoute } from './hooks/useDocRoute'
+import { useSidebarWidth } from './hooks/useSidebarWidth'
 import { api } from './utils/api'
-import { fmtKey, shiftKey, todayDate, todayKey } from './utils/date'
-import { avgWithin, recordStreak, weightSeries } from './utils/stats'
+import { ancestorsOf, baseNameOf, buildTree, collectDirPaths } from './utils/tree'
+import { loadJson, loadString, saveJson, saveString } from './utils/storage'
 import type { LockStatus } from './types'
 
 type LockPhase = 'checking' | 'setup' | 'locked' | 'ready'
@@ -20,255 +15,255 @@ type LockPhase = 'checking' | 'setup' | 'locked' | 'ready'
 export default function App() {
   const [phase, setPhase] = useState<LockPhase>('checking')
 
-  // 开屏先问锁状态:未设置访问码 → 设置流程;已设置且无有效会话 → 锁屏
   useEffect(() => {
+    let alive = true
     api<LockStatus>('/api/lock/status')
-      .then(s => setPhase(!s.isSet ? 'setup' : s.unlocked ? 'ready' : 'locked'))
-      .catch(() => setPhase('locked'))
+      .then(status => {
+        if (!alive) return
+        setPhase(!status.isSet ? 'setup' : status.unlocked ? 'ready' : 'locked')
+      })
+      .catch(() => {
+        // 查不到锁状态时按「已上锁」处理:宁可让用户多输一次访问码,也不能把内容漏出去
+        if (alive) setPhase('locked')
+      })
+    return () => {
+      alive = false
+    }
   }, [])
 
   if (phase === 'checking') {
     return (
       <div className="grid min-h-dvh place-items-center bg-base-200">
-        <span className="loading loading-ring loading-lg text-primary/60" />
+        <span className="loading loading-spinner loading-md text-primary" />
       </div>
     )
   }
-  if (phase === 'setup' || phase === 'locked') {
-    return <LockScreen mode={phase} onUnlocked={() => setPhase('ready')} />
-  }
-  return <Workspace onLock={() => setPhase('locked')} />
+
+  if (phase !== 'ready') return <LockScreen mode={phase} onUnlocked={() => setPhase('ready')} />
+
+  return <Workspace onLocked={() => setPhase('locked')} />
 }
 
-// ---------- 解锁后的工作台 ----------
+/** 解锁后的工作台:左目录 + 右阅读区,两栏各自内部滚动,整页不出滚动条 */
+function Workspace({ onLocked }: { onLocked: () => void }) {
+  const { tree, error, loading, refreshing, reload } = useDocsTree()
+  const { width, onDragStart } = useSidebarWidth()
+  const routePath = useDocRoute()
 
-function Workspace({ onLock }: { onLock: () => void }) {
-  const now = todayDate()
-  const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() })
-  const [selectedKey, setSelectedKey] = useState<string>(() => todayKey())
-  const { getDay: getHealthDay, addLog, patchLog, removeLog, reload: reloadHealth, store: healthStore } = useHealth()
-  const { getDay: getJournalDay, add: addJournal, patch: patchJournal, remove: removeJournal, store: journalStore } = useJournal()
-  const { get: getWeight, setFor: setWeight, remove: removeWeight, store: weightStore } = useWeights()
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set(loadJson<string[]>('expandedDirs', [])))
+  const [recent, setRecent] = useState<string[]>(() => loadJson<string[]>('recent', []))
+  const [theme, setTheme] = useState(() => loadString('theme', 'mycal'))
 
-  const [profileOpen, setProfileOpen] = useState(false)
-  const [aiConfigOpen, setAiConfigOpen] = useState(false)
-  const [weightOpen, setWeightOpen] = useState(false)
-  const [toasts, setToasts] = useState<ToastData[]>([])
-  const toastSeq = useRef(0)
-  const [isDark, setIsDark] = useState(
-    () => document.documentElement.dataset.theme === 'dim',
-  )
+  const root = useMemo(() => (tree ? buildTree(tree.files) : null), [tree])
+  const knownPaths = useMemo(() => new Set(tree?.files.map(f => f.path) ?? []), [tree])
+  const sizeOf = useMemo(() => new Map(tree?.files.map(f => [f.path, f.size]) ?? []), [tree])
+  const allDirs = useMemo(() => (root ? collectDirPaths(root) : []), [root])
 
-  const pushToast = useCallback((kind: ToastData['kind'], text: string) => {
-    const id = ++toastSeq.current
-    setToasts(ts => [...ts, { id, kind, text }])
-    setTimeout(() => setToasts(ts => ts.filter(t => t.id !== id)), 4500)
-  }, [])
+  // 当前文件必须是真实存在的路径:手工改地址栏、或文件在仓库里被删掉之后,
+  // 不能让阅读区拿着一个不存在的路径去请求
+  const currentPath = routePath && knownPaths.has(routePath) ? routePath : null
+  const content = useDocContent(currentPath)
 
-  // Esc 关闭所有弹窗
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setProfileOpen(false)
-        setAiConfigOpen(false)
-        setWeightOpen(false)
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    document.documentElement.dataset.theme = theme
+    saveString('theme', theme)
+  }, [theme])
+
+  useEffect(() => {
+    saveJson('expandedDirs', [...expanded])
+  }, [expanded])
+
+  useEffect(() => {
+    saveJson('recent', recent)
+  }, [recent])
+
+  // 打开一个深层文件时,自动把它沿途的父目录展开,否则左侧根本看不到当前文件在哪
+  useEffect(() => {
+    if (!currentPath) return
+    setExpanded(prev => {
+      const next = new Set(prev)
+      for (const dir of ancestorsOf(currentPath)) next.add(dir)
+      return next.size === prev.size ? prev : next
+    })
+    setRecent(prev => [currentPath, ...prev.filter(p => p !== currentPath)].slice(0, 15))
+  }, [currentPath])
+
+  const toggleDir = useCallback((path: string) => {
+    setExpanded(prev => {
+      const next = new Set(prev)
+      if (next.has(path)) next.delete(path)
+      else next.add(path)
+      return next
+    })
   }, [])
 
-  const manualLock = useCallback(async () => {
+  const lockNow = async () => {
     try {
       await api<{ ok: true }>('/api/lock/lock', { method: 'POST' })
-      pushToast('success', '已上锁,所有设备需重新输入访问码')
-      onLock()
-    } catch (err) {
-      pushToast('error', err instanceof Error ? err.message : String(err))
-    }
-  }, [onLock, pushToast])
-
-  // 有记录的日期集合(打卡/流水/体重任一)→ 月历绿点 + 本月概况 + 连续天数
-  const recordKeys = useMemo(() => {
-    const s = new Set<string>()
-    for (const [k, list] of Object.entries(healthStore)) if (list.length) s.add(k)
-    for (const [k, list] of Object.entries(journalStore)) if (list.length) s.add(k)
-    for (const k of Object.keys(weightStore)) s.add(k)
-    return s
-  }, [healthStore, journalStore, weightStore])
-
-  const wSeries = useMemo(() => weightSeries(weightStore), [weightStore])
-  const latestW = wSeries[wSeries.length - 1] ?? null
-  const wVs7 = latestW ? avgWithin(wSeries, shiftKey(latestW.key, -1), 7) : null
-  const wDelta = latestW && wVs7 != null ? Math.round((latestW.kg - wVs7) * 10) / 10 : null
-
-  // 本月概况(跟随日历正在看的月份):有记录的天数 + 记录条数 + 连续天数
-  const monthStats = useMemo(() => {
-    const prefix = fmtKey(ym.y, ym.m, 1).slice(0, 7)
-    let days = 0
-    for (const k of recordKeys) if (k.startsWith(prefix)) days++
-    let entries = 0
-    for (const [k, l] of Object.entries(journalStore)) if (k.startsWith(prefix)) entries += l.length
-    for (const [k, l] of Object.entries(healthStore)) if (k.startsWith(prefix)) entries += l.length
-    return { days, entries, streak: recordStreak(recordKeys, todayKey()) }
-  }, [recordKeys, journalStore, healthStore, ym])
-
-  const prevMonth = () => setYm(({ y, m }) => (m === 0 ? { y: y - 1, m: 11 } : { y, m: m - 1 }))
-  const nextMonth = () => setYm(({ y, m }) => (m === 11 ? { y: y + 1, m: 0 } : { y, m: m + 1 }))
-  const goToday = () => {
-    const t = todayDate()
-    setYm({ y: t.getFullYear(), m: t.getMonth() })
-    setSelectedKey(todayKey())
-  }
-
-  const toggleTheme = () => {
-    const next = !isDark
-    setIsDark(next)
-    document.documentElement.dataset.theme = next ? 'dim' : 'mycal'
-    try {
-      localStorage.setItem('mycal:theme', next ? 'dim' : 'mycal')
     } catch {
-      /* 忽略隐私模式 */
+      // 即使请求失败也回锁屏:本地状态先收紧,避免「点了上锁其实没锁上」的错觉
     }
+    onLocked()
   }
 
-  // 桌面端(lg 及以上)锁定为整屏工作台:顶栏不动,左右两栏各自内部滚动;
-  // 左栏是日历导航 + 概览,右栏是"一天所有记录"的日志主体。窄屏整页滚动。
+  if (loading) {
+    return (
+      <div className="grid min-h-dvh place-items-center bg-base-200">
+        <span className="inline-flex items-center gap-2 text-sm text-base-content/60">
+          <span className="loading loading-spinner loading-sm" />
+          正在读取仓库目录…
+        </span>
+      </div>
+    )
+  }
+
+  if (error || !tree || !root) {
+    return (
+      <div className="grid min-h-dvh place-items-center bg-base-200 p-6">
+        <div className="w-full max-w-lg rounded-box border border-error/40 bg-base-100 p-6">
+          <h1 className="mb-1 mt-0 text-base font-semibold">无法读取仓库目录</h1>
+          <p className="mb-4 mt-0 text-sm text-base-content/70">
+            内容来自 Gitee 私有仓库,失败通常是令牌缺失或失效,也可能是网络不通。
+          </p>
+          <pre className="panel-scroll mb-4 max-h-40 overflow-auto whitespace-pre-wrap rounded-box bg-base-200 p-3 text-xs text-error">
+            {error || '未知错误'}
+          </pre>
+          <div className="flex gap-2">
+            <button type="button" className="btn btn-primary btn-sm" onClick={() => void reload(true)}>
+              重试
+            </button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => void lockNow()}>
+              上锁
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="flex min-h-dvh flex-col bg-base-200 lg:h-dvh lg:overflow-hidden">
-      {/* 顶栏 */}
-      <header className="sticky top-0 z-20 flex-none border-b border-base-300 bg-base-100/85 backdrop-blur-md">
-        <div className="mx-auto flex w-full max-w-[1920px] flex-wrap items-center gap-4 px-8 py-3">
-          <span className="mr-auto inline-flex items-center gap-2.5">
-            <span className="btn btn-primary btn-square btn-sm font-mono text-xs font-bold">M</span>
-            <span className="font-display text-lg font-semibold tracking-tight">MyCal</span>
-            <span className="badge badge-ghost badge-sm">私人健康日志</span>
-          </span>
+    <div className="flex h-dvh flex-col overflow-hidden bg-base-100">
+      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-base-300 px-3">
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="btn btn-primary btn-square btn-xs font-mono text-[10px] font-bold">D</span>
+          <span className="font-display text-sm font-semibold tracking-tight">MyDocs</span>
+        </div>
 
-          <button type="button" className="btn btn-ghost btn-sm" onClick={goToday}>
-            今天
-          </button>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setProfileOpen(true)} title="健康档案(AI 汇总会结合身体情况)">
-            档案
-          </button>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAiConfigOpen(true)} title="AI 服务配置">
-            AI
-          </button>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => void manualLock()} title="立即上锁:所有设备需重新解锁">
-            🔒 上锁
-          </button>
+        <span
+          className="hidden truncate text-xs text-base-content/45 sm:inline"
+          title={`${tree.owner}/${tree.repo}@${tree.branch}`}
+        >
+          {tree.owner}/{tree.repo}
+          <span className="mx-1 text-base-content/25">·</span>
+          {tree.branch}
+          {tree.rev && (
+            <>
+              <span className="mx-1 text-base-content/25">·</span>
+              <span className="font-mono">{tree.rev.slice(0, 7)}</span>
+            </>
+          )}
+          <span className="mx-1 text-base-content/25">·</span>
+          {tree.files.length} 个文件
+        </span>
 
-          <button type="button" className="btn btn-ghost btn-sm btn-square" onClick={toggleTheme} aria-label="切换深色模式">
-            {isDark ? (
-              <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <circle cx="12" cy="12" r="4" />
-                <path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
-              </svg>
-            ) : (
-              <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z" />
-              </svg>
-            )}
+        <div className="ml-auto flex shrink-0 items-center gap-1">
+          {tree.truncated && <span className="badge badge-warning badge-sm">目录被截断</span>}
+          <button
+            type="button"
+            className="btn btn-ghost btn-xs"
+            onClick={() => void reload(true)}
+            disabled={refreshing}
+            title="重新拉取仓库目录"
+          >
+            {refreshing ? <span className="loading loading-spinner loading-xs" /> : '刷新'}
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-xs"
+            onClick={() => setTheme(theme === 'dim' ? 'mycal' : 'dim')}
+            title="切换深浅色"
+          >
+            {theme === 'dim' ? '浅色' : '深色'}
+          </button>
+          <button type="button" className="btn btn-ghost btn-xs" onClick={() => void lockNow()}>
+            上锁
           </button>
         </div>
       </header>
 
-      {/* 工作区:左导航右日志,两栏等高各自滚动 */}
-      <main className="mx-auto grid w-full max-w-[1920px] flex-1 grid-cols-1 items-start gap-6 px-8 py-8 lg:min-h-0 lg:grid-cols-[240px_minmax(0,1fr)] lg:items-stretch lg:overflow-hidden">
-        <div className="panel-scroll flex flex-col gap-5 lg:min-h-0 lg:overflow-y-auto">
-          <Calendar
-            year={ym.y}
-            month={ym.m}
-            selectedKey={selectedKey}
-            recorded={recordKeys}
-            onPick={setSelectedKey}
-            onPrevMonth={prevMonth}
-            onNextMonth={nextMonth}
-            onToday={goToday}
-          />
+      <div className="flex min-h-0 flex-1">
+        <aside style={{ width: `${width}px` }} className="flex min-h-0 shrink-0 flex-col border-r border-base-300">
+          <div className="flex shrink-0 items-center gap-1 px-2 py-1.5 text-[11px] text-base-content/45">
+            <span className="pl-1">目录</span>
+            <span className="ml-auto tabular-nums text-base-content/30">{allDirs.length} 个文件夹</span>
+            <button
+              type="button"
+              className="btn btn-ghost btn-xs px-1"
+              title="全部展开"
+              onClick={() => setExpanded(new Set(allDirs))}
+            >
+              展开
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-xs px-1"
+              title="全部折叠"
+              onClick={() => setExpanded(new Set())}
+            >
+              折叠
+            </button>
+          </div>
 
-          <section className="rounded-box border border-base-300 bg-base-100 p-4 shadow-sm" aria-label="本月概况">
-            <h3 className="m-0 font-mono text-[11px] uppercase tracking-[0.08em] text-base-content/45">
-              {ym.m === now.getMonth() ? '本月概况' : `${ym.m + 1} 月概况`}
-            </h3>
-            <div className="mt-2 flex items-baseline gap-4 font-mono text-xs text-base-content/60">
-              <span>
-                记录 <b className="text-base-content text-sm tabular-nums">{monthStats.days}</b> 天
-              </span>
-              <span>
-                <b className="text-base-content text-sm tabular-nums">{monthStats.entries}</b> 条
-              </span>
-              {monthStats.streak > 1 && (
-                <span className="text-warning">🔥 连续 {monthStats.streak} 天</span>
-              )}
+          <div className="panel-scroll min-h-0 flex-1 overflow-auto px-2">
+            <DocTree
+              root={root}
+              currentPath={currentPath}
+              expanded={expanded}
+              onToggle={toggleDir}
+              onSelect={navigateToDoc}
+            />
+          </div>
+
+          {recent.length > 0 && (
+            <div className="panel-scroll max-h-36 shrink-0 overflow-auto border-t border-base-300 px-2 py-1.5">
+              <div className="pl-1 text-[11px] text-base-content/45">最近阅读</div>
+              <ul className="mt-0.5 flex flex-col gap-px">
+                {recent.slice(0, 8).map(path => (
+                  <li key={path}>
+                    <button
+                      type="button"
+                      className={`w-full truncate rounded-md px-2 py-[3px] text-left text-[12px] transition-colors ${
+                        path === currentPath ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200'
+                      }`}
+                      title={path}
+                      onClick={() => navigateToDoc(path)}
+                    >
+                      {baseNameOf(path)}
+                    </button>
+                  </li>
+                ))}
+              </ul>
             </div>
-          </section>
+          )}
+        </aside>
 
-          <button
-            type="button"
-            className="rounded-box border border-base-300 bg-base-100 p-4 text-left shadow-sm transition-colors hover:border-primary/40"
-            onClick={() => setWeightOpen(true)}
-            aria-label="打开体重曲线"
-          >
-            <span className="flex items-baseline justify-between font-mono text-[11px] uppercase tracking-[0.08em] text-base-content/45">
-              体重走势
-              <span className="normal-case tracking-normal text-primary/70">曲线/BMI ›</span>
-            </span>
-            <span className="mt-1 flex items-baseline gap-2">
-              <b className="font-display text-2xl font-semibold tabular-nums">
-                {latestW ? latestW.kg.toFixed(1) : '—'}
-              </b>
-              <small className="font-mono text-xs text-base-content/50">
-                {latestW ? `kg · ${latestW.key.slice(5)}` : 'kg · 点击查看'}
-              </small>
-              {wDelta != null && (
-                <small className={`font-mono text-xs tabular-nums ${wDelta <= 0 ? 'text-success' : 'text-warning'}`}>
-                  {wDelta > 0 ? '+' : ''}
-                  {wDelta.toFixed(1)}/周
-                </small>
-              )}
-            </span>
-            <span className="mt-1 block">
-              <WeightSparkline series={wSeries} />
-            </span>
-          </button>
-        </div>
-
-        <DayView
-          dateKey={selectedKey}
-          journal={getJournalDay(selectedKey)}
-          onJournalAdd={text => addJournal(selectedKey, text)}
-          onJournalPatch={(id, text) => patchJournal(selectedKey, id, text)}
-          onJournalRemove={id => removeJournal(selectedKey, id)}
-          weight={getWeight(selectedKey)}
-          weightSeriesUpToDay={wSeries}
-          onSaveWeight={async kg => {
-            await setWeight(selectedKey, kg)
-          }}
-          onClearWeight={async () => {
-            await removeWeight(selectedKey)
-          }}
-          diaryLogs={getHealthDay(selectedKey)}
-          onDiaryAdd={input => addLog(selectedKey, input)}
-          onDiaryPatch={(id, patch) => patchLog(selectedKey, id, patch)}
-          onDiaryRemove={id => removeLog(selectedKey, id)}
-          notify={pushToast}
-          onSummaryGenerated={() => void reloadHealth().catch(() => undefined)}
+        <div
+          onMouseDown={onDragStart}
+          className="w-1 shrink-0 cursor-col-resize bg-transparent transition-colors hover:bg-primary/30"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="调整目录栏宽度"
         />
-      </main>
 
-      <ProfileModal open={profileOpen} onClose={() => setProfileOpen(false)} notify={pushToast} />
-      <AiConfigModal open={aiConfigOpen} onClose={() => setAiConfigOpen(false)} notify={pushToast} />
-      <WeightModal
-        open={weightOpen}
-        onClose={() => setWeightOpen(false)}
-        series={wSeries}
-        onRemove={async key => {
-          await removeWeight(key)
-        }}
-        notify={pushToast}
-      />
-      <Toasts items={toasts} onDismiss={id => setToasts(ts => ts.filter(t => t.id !== id))} />
+        <main className="min-w-0 flex-1">
+          <ReaderPane
+            path={currentPath}
+            size={currentPath ? (sizeOf.get(currentPath) ?? 0) : 0}
+            content={content}
+            knownPaths={knownPaths}
+          />
+        </main>
+      </div>
     </div>
   )
 }
