@@ -90,11 +90,23 @@ function blobSha(bytes) {
 /** 任何以 '.' 开头的路径段都视为隐藏(与前端、worker 的过滤规则一致) */
 const isHidden = rel => rel.split(/[\\/]/).some(seg => seg.startsWith('.'))
 
+/**
+ * 不进阅读器的扩展名(与 worker/paths.ts 的 IGNORED_EXT 保持一致)。
+ * zip 是纯归档,阅读器不解压也不下载,列在目录里只会干扰浏览 —— 干脆不上传。
+ * 因为收尾时是按本清单裁剪的,之前误传进去的 zip 也会在下次同步时被删掉。
+ */
+const IGNORED_EXT = new Set(['zip'])
+const isIgnored = rel => {
+  const name = rel.split(/[\\/]/).pop() ?? ''
+  const i = name.lastIndexOf('.')
+  return i > 0 && IGNORED_EXT.has(name.slice(i + 1).toLowerCase())
+}
+
 function walk(dir, base = dir, out = []) {
   for (const name of readdirSync(dir)) {
     const full = join(dir, name)
     const rel = relative(base, full)
-    if (isHidden(rel)) continue
+    if (isHidden(rel) || isIgnored(rel)) continue
     const st = statSync(full)
     if (st.isDirectory()) walk(full, base, out)
     else if (st.isFile()) out.push({ rel: rel.split(sep).join('/'), full, size: st.size })

@@ -8,7 +8,7 @@
 // 已经同步的内容照样能读。
 import { HttpError } from './http'
 import { repoInfo } from './repo'
-import { contentDisposition, contentTypeFor, normPath } from './paths'
+import { contentDisposition, contentTypeFor, isIgnoredPath, normPath } from './paths'
 import { getSyncMeta, listFiles, readFile } from './store'
 import type { Env } from './env'
 
@@ -38,7 +38,9 @@ export interface DocsTree {
 /** 文件树:直接读本地清单 */
 export async function handleTree(env: Env): Promise<DocsTree> {
   const { owner, repo, branch } = repoInfo(env)
-  const [files, meta] = await Promise.all([listFiles(env.mycalDB), getSyncMeta(env.mycalDB)])
+  const [all, meta] = await Promise.all([listFiles(env.mycalDB), getSyncMeta(env.mycalDB)])
+  // zip 之类的归档不进列表(见 paths.ts 的 IGNORED_EXT)
+  const files = all.filter(f => !isIgnoredPath(f.path))
   return {
     owner,
     repo,

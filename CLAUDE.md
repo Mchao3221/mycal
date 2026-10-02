@@ -84,7 +84,13 @@ pnpm run deploy         # build → 远端 D1 迁移 → wrangler deploy(顺序�
 - **Markdown 管线在 `src/utils/markdown.ts`**:markdown-it + GFM 任务列表 + KaTeX(`$...$` 与 `$$...$$`)+ Obsidian 方言(wikilink / 嵌入 / callout / frontmatter / `==高亮==`)+ 资源路径重写 + **DOMPurify 消毒**。对外只暴露 `renderMarkdown(source, { docPath, knownPaths })`。**允许内嵌 HTML**,所以消毒是必需的,改这里时不要把 DOMPurify 摘掉。
 - **代码高亮只有一个实例**:`src/utils/highlight.ts` 用 `highlight.js/lib/core` 按需注册十几种语言(不要改成 `import hljs from 'highlight.js'`,那会把 190 多种语言全打进包,约 1MB)。Markdown 渲染与源码视图共用 `highlightBlock`。**颜色不在 JS 里**,由 `src/styles.css` 按 `[data-theme]` 手写 `.hljs-*` 规则(所以也不能 import hljs 的主题 CSS)。
 - **本地偏好一律 localStorage**(`src/utils/storage.ts`,统一 `mydocs:` 前缀):目录展开状态、栏宽、主题。项目已决定不为阅读进度引入 D1,所以这些不同步到其它设备。(早期版本还存过"最近阅读",该功能已按用户要求去掉;旧数据留在 `mydocs:recent` 里不影响任何逻辑。)
-- **目录树全部折叠启动**:仓库有 789 个文件,一进页面全展开既卡又难找。打开深层文件时会自动展开其祖先目录。不做虚拟滚动 —— 折叠状态下 DOM 里只有顶层几个节点。
+- **目录树全部折叠启动**:仓库有 783 个文件,一进页面全展开既卡又难找。打开深层文件时会自动展开其祖先目录。不做虚拟滚动 —— 折叠状态下 DOM 里只有顶层几个节点。
+- **目录树的顶层行是常驻的(`DocTree.tsx`,别改回去)**:这是被真实数据逼出来的设计。这个仓库 751 个文件挤在 `02_项目/脚本/History/<编号>/` 下,`脚本` 有约 230 个子目录、`History` 又有约 200 个 —— 打开一个深层文件自动展开祖先链后,侧栏会变成 255 行、7400 多像素高(约 11 屏),把 `03_参考 / 04_资料 / 07读书 / README.md` 全推到 11 屏之外,看起来就像"只剩下收集箱和项目两个文件夹"(实测数据,用户就是这么报的)。
+  所以顶层不再嵌在可滚动内容里,而是 **sticky 钉在容器顶部**(第 i 行 `top: i * TOP_ROW_PX` 依次堆叠,`bg-base-100` 保证不透视),展开的子级统一排在它们下面并独立滚动。
+  - `TOP_ROW_PX = 29` 必须与 `ROW` 的纵向尺寸一致(py-1 8px + leading-5 20px + ul 的 gap-px 1px);改行高时这个常量要跟着改,否则堆叠位置会错。
+  - 每组展开的子级前面有一行小字标注它的顶层目录名,避免多个顶层同时展开时看不出层级。
+  - 验证方法:滚到任意位置后,6 个顶层项的 `getBoundingClientRect()` 都应落在滚动容器可视区内(实测 0/1000/3000/6000/7424px 处均为 6/6)。
+- **归档类文件不展示**(`paths.ts` 的 `IGNORED_EXT`,目前只有 `zip`):阅读器不解压也不提供下载,列在目录里只会干扰浏览。同步脚本按同一份清单跳过它们(不上传),worker 在 `/api/docs/tree` 再过滤一次兜住旧数据;**因为收尾是按清单裁剪的,所以之前误传进去的 zip 会在下次同步时被删掉**(实测删掉了 6 个)。两边清单要保持一致。
 
 ## 其他约定
 

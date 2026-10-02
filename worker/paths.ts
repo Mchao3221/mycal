@@ -50,6 +50,18 @@ export function isHidden(path: string): boolean {
 }
 
 /**
+ * 不进阅读器的扩展名。
+ * zip 是纯归档,这个阅读器不做解压也不提供下载,列在目录里只会干扰浏览,所以直接不展示。
+ * 同步脚本也按同一份清单跳过它们(不浪费上传与 D1 空间);
+ * 这里再过滤一次是为了兜住"规则改之前就已经同步进去的旧数据"。
+ */
+export const IGNORED_EXT = new Set(['zip'])
+
+export function isIgnoredPath(path: string): boolean {
+  return IGNORED_EXT.has(extOf(path))
+}
+
+/**
  * 校验并规范化客户端传来的 path。
  * 同时挡住目录穿越(../)、空段(//)、反斜杠与控制字符,保证拼出来的 URL
  * 永远落在仓库内部,不会变成第二个主机名。
