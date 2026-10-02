@@ -86,9 +86,3 @@ export function ancestorsOf(filePath: string): string[] {
   }
   return out
 }
-
-/** 路径 → 展示用文件名 */
-export const baseNameOf = (path: string): string => path.split('/').pop() ?? path
-
-/** 路径 → 父目录(根目录返回空串) */
-export const dirNameOf = (path: string): string => path.split('/').slice(0, -1).join('/')

@@ -70,7 +70,7 @@ pnpm run deploy         # build → 远端 D1 迁移 → wrangler deploy(顺序�
   - **尺寸策略是这次需求的核心**,全部逻辑在纯函数 `computeFitScale` 里(可脱离 DOM 单测)。优先级:**① 横向永不溢出**(阅读是纵向的,横向滚动条最难受)→ ② 尽量整屏显示(宽高同时约束)→ ③ 最后才守可读下限 `MIN_SCALE = 0.55`,高度实在放不下时允许纵向滚动但字号不再缩;小图不放大;点击图可在「适应 / 原始尺寸」间切换。改这些常量前先用纯函数跑一遍各尺寸场景。
 - **Markdown 管线在 `src/utils/markdown.ts`**:markdown-it + GFM 任务列表 + KaTeX(`$...$` 与 `$$...$$`)+ Obsidian 方言(wikilink / 嵌入 / callout / frontmatter / `==高亮==`)+ 资源路径重写 + **DOMPurify 消毒**。对外只暴露 `renderMarkdown(source, { docPath, knownPaths })`。**允许内嵌 HTML**,所以消毒是必需的,改这里时不要把 DOMPurify 摘掉。
 - **代码高亮只有一个实例**:`src/utils/highlight.ts` 用 `highlight.js/lib/core` 按需注册十几种语言(不要改成 `import hljs from 'highlight.js'`,那会把 190 多种语言全打进包,约 1MB)。Markdown 渲染与源码视图共用 `highlightBlock`。**颜色不在 JS 里**,由 `src/styles.css` 按 `[data-theme]` 手写 `.hljs-*` 规则(所以也不能 import hljs 的主题 CSS)。
-- **本地偏好一律 localStorage**(`src/utils/storage.ts`,统一 `mydocs:` 前缀):目录展开状态、最近阅读、栏宽、主题。项目已决定不为阅读进度引入 D1,所以这些不同步到其它设备。
+- **本地偏好一律 localStorage**(`src/utils/storage.ts`,统一 `mydocs:` 前缀):目录展开状态、栏宽、主题。项目已决定不为阅读进度引入 D1,所以这些不同步到其它设备。(早期版本还存过"最近阅读",该功能已按用户要求去掉;旧数据留在 `mydocs:recent` 里不影响任何逻辑。)
 - **目录树全部折叠启动**:仓库有 789 个文件,一进页面全展开既卡又难找。打开深层文件时会自动展开其祖先目录。不做虚拟滚动 —— 折叠状态下 DOM 里只有顶层几个节点。
 
 ## 其他约定

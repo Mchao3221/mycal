@@ -7,7 +7,7 @@ import { navigateToDoc, useDocRoute } from './hooks/useDocRoute'
 import { useSidebarWidth } from './hooks/useSidebarWidth'
 import { api } from './utils/api'
 import { isTextKind, rawUrl } from './utils/fileKind'
-import { ancestorsOf, baseNameOf, buildTree, collectDirPaths } from './utils/tree'
+import { ancestorsOf, buildTree, collectDirPaths } from './utils/tree'
 import { loadJson, loadString, saveJson, saveString } from './utils/storage'
 import type { LockStatus } from './types'
 
@@ -52,7 +52,6 @@ function Workspace({ onLocked }: { onLocked: () => void }) {
   const routePath = useDocRoute()
 
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(loadJson<string[]>('expandedDirs', [])))
-  const [recent, setRecent] = useState<string[]>(() => loadJson<string[]>('recent', []))
   const [theme, setTheme] = useState(() => loadString('theme', 'mycal'))
 
   const root = useMemo(() => (tree ? buildTree(tree.files) : null), [tree])
@@ -78,10 +77,6 @@ function Workspace({ onLocked }: { onLocked: () => void }) {
     saveJson('expandedDirs', [...expanded])
   }, [expanded])
 
-  useEffect(() => {
-    saveJson('recent', recent)
-  }, [recent])
-
   // 打开一个深层文件时,自动把它沿途的父目录展开,否则左侧根本看不到当前文件在哪
   useEffect(() => {
     if (!currentPath) return
@@ -90,7 +85,6 @@ function Workspace({ onLocked }: { onLocked: () => void }) {
       for (const dir of ancestorsOf(currentPath)) next.add(dir)
       return next.size === prev.size ? prev : next
     })
-    setRecent(prev => [currentPath, ...prev.filter(p => p !== currentPath)].slice(0, 15))
   }, [currentPath])
 
   const toggleDir = useCallback((path: string) => {
@@ -258,28 +252,6 @@ function Workspace({ onLocked }: { onLocked: () => void }) {
               onHover={prefetch}
             />
           </div>
-
-          {recent.length > 0 && (
-            <div className="panel-scroll max-h-36 shrink-0 overflow-auto border-t border-base-300 px-2 py-1.5">
-              <div className="pl-1 text-[11px] text-base-content/45">最近阅读</div>
-              <ul className="mt-0.5 flex flex-col gap-px">
-                {recent.slice(0, 8).map(path => (
-                  <li key={path}>
-                    <button
-                      type="button"
-                      className={`w-full truncate rounded-md px-2 py-[3px] text-left text-[12px] transition-colors ${
-                        path === currentPath ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200'
-                      }`}
-                      title={path}
-                      onClick={() => navigateToDoc(path)}
-                    >
-                      {baseNameOf(path)}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
         </aside>
 
         <div
