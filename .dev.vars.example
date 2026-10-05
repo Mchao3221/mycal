@@ -1,0 +1,5 @@
+# 本地开发（复制为 .dev.vars 仅供 wrangler dev 用，本文件可提交）
+# D1 本地不需要配，wrangler dev 自动用本地副本。
+
+# 前端直连已部署 Worker 时才用（vite dev）：
+# VITE_API_BASE=https://mycal.xxx.workers.dev

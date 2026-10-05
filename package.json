@@ -1,33 +1,31 @@
 {
-  "name": "mydocs",
+  "name": "reqman",
   "private": true,
-  "version": "0.7.0",
+  "version": "0.1.0",
   "packageManager": "pnpm@11.7.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit -p tsconfig.json && vite build",
-    "preview": "pnpm run build && vite preview"
+    "build": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.worker.json && vite build",
+    "preview": "pnpm run build && vite preview",
+    "deploy": "pnpm run build && wrangler deploy",
+    "db:migrate": "wrangler d1 migrations apply mycal_db --remote",
+    "db:migrate:local": "wrangler d1 migrations apply mycal_db --local"
   },
   "dependencies": {
-    "dompurify": "^3.4.16",
-    "epubjs": "^0.3.93",
-    "highlight.js": "^11.12.0",
-    "katex": "^0.19.0",
-    "markdown-it": "^15.0.2",
-    "mermaid": "^11.17.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250823.0",
     "@tailwindcss/vite": "^4.3.3",
-    "@types/markdown-it": "^14.2.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
     "daisyui": "^5.7.27",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.6.3",
-    "vite": "^8.2.2"
+    "vite": "^8.2.2",
+    "wrangler": "^4.26.0"
   }
 }

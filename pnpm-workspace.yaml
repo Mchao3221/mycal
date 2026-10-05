@@ -14,7 +14,8 @@ allowBuilds:
   core-js: false
   es5-ext: false
   esbuild: true
-  # workerd 是已移除的 wrangler 的遗留依赖,它的安装脚本不需要执行。
+  wrangler: true
+  # workerd 是 wrangler 的依赖，它的安装脚本不需要执行。
   # 注意:pnpm 会自己把这里写成占位字符串 "set this to true or false",
   # 而占位符会让 pnpm install 以 ERR_PNPM_IGNORED_BUILDS 退出码 1 —— 必须是明确的 true/false。
   workerd: false
